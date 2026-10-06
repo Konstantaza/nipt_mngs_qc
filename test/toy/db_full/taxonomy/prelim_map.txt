@@ -1,0 +1,4 @@
+TAXID	seq1|kraken:taxid|10798	10798
+TAXID	seq1|kraken:taxid|284813	284813
+TAXID	seq1|kraken:taxid|9606	9606
+TAXID	seq1|kraken:taxid|2097	2097

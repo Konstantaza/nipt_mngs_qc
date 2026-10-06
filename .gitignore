@@ -1,0 +1,11 @@
+# Nextflow
+work/
+.nextflow/
+.nextflow.log*
+
+# Результаты прогонов
+results/
+test/results_*/
+
+# Системное
+.DS_Store

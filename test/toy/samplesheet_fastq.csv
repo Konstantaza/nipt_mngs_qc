@@ -1,0 +1,3 @@
+sample,fastq_1,fastq_2
+TOY_NORMAL,TOY_NORMAL_R1.fastq.gz,TOY_NORMAL_R2.fastq.gz
+TOY_ZERO,TOY_ZERO_R1.fastq.gz,TOY_ZERO_R2.fastq.gz

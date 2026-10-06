@@ -1,0 +1,24 @@
+# MultiQC config для NIPT metagenomics QC pipeline
+# Главное назначение — чистые имена сэмплов: наши файлы названы
+# <sample>.<fraction>.<db>.<tool>.<ext>, и без дополнительной чистки
+# MultiQC показывал бы всю эту строку как имя сэмпла.
+
+title: "NIPT metagenomics QC"
+intro_text: "Per-sample QC: fastp, hocort split (flagstat), kraken2, QC gate verdicts."
+
+extra_fn_clean_exts:
+  - ".fastp"
+  - ".flagstat"
+  - ".kraken2"
+  - ".bracken"
+  - ".report"
+
+# Порядок секций в отчёте: сначала наш вердикт, потом детали инструментов
+module_order:
+  - custom_content
+  - fastp
+  - samtools
+  - kraken
+
+# Не показывать путь к файлу вместо имени сэмпла
+use_filename_as_sample_name: false
