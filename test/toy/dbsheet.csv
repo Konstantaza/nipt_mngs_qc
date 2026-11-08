@@ -1,0 +1,3 @@
+db_id,annotator,path,role
+db_full,kraken2_bracken,db_full,full
+db_patho,kraken2_bracken,db_patho,patho

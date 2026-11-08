@@ -1,0 +1,3 @@
+db_id,annotator,path,role
+stub_full,stub,stub_fixtures,full
+stub_patho,stub,stub_fixtures,patho

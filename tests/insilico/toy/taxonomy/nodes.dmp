@@ -1,0 +1,43 @@
+1	|	1	|	no rank	|
+2	|	1	|	domain	|
+543	|	91347	|	family	|
+561	|	543	|	genus	|
+562	|	561	|	species	|
+1224	|	3379134	|	phylum	|
+1236	|	1224	|	class	|
+2759	|	1	|	domain	|
+4751	|	2759	|	kingdom	|
+4890	|	451864	|	phylum	|
+4891	|	147537	|	class	|
+4892	|	4891	|	order	|
+4893	|	4892	|	family	|
+4930	|	4893	|	genus	|
+4932	|	4930	|	species	|
+7711	|	33208	|	phylum	|
+7742	|	89593	|	clade	|
+9347	|	40674	|	clade	|
+9443	|	314146	|	order	|
+9526	|	376913	|	parvorder	|
+9604	|	9526	|	family	|
+9605	|	9604	|	genus	|
+9606	|	9605	|	species	|
+10239	|	1	|	acellular root	|
+10841	|	2732412	|	class	|
+10847	|	1910954	|	species	|
+33208	|	2759	|	kingdom	|
+40674	|	117571	|	class	|
+89593	|	7711	|	subphylum	|
+91347	|	1236	|	order	|
+117571	|	7742	|	clade	|
+147537	|	4890	|	subphylum	|
+314146	|	9347	|	superorder	|
+376913	|	9443	|	suborder	|
+451864	|	4751	|	subkingdom	|
+1910950	|	10841	|	order	|
+1910954	|	3701015	|	genus	|
+2731342	|	10239	|	realm	|
+2732091	|	2731342	|	kingdom	|
+2732412	|	2732091	|	phylum	|
+2886930	|	10847	|	no rank	|
+3379134	|	2	|	kingdom	|
+3701015	|	1910950	|	family	|

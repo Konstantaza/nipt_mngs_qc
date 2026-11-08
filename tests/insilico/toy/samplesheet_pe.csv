@@ -1,0 +1,2 @@
+sample,fastq_1,fastq_2,single_end
+SAMOVAR_PE,../../../insilico_runs/toy_995/reads/toy_PE_R1.fastq,../../../insilico_runs/toy_995/reads/toy_PE_R2.fastq,false

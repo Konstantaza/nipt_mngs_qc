@@ -1,37 +1,67 @@
 // =============================================================================
-// BAM2FASTA — конвертация DEHOST/HOST BAM в FASTA + сбор статистики (flagstat)
+// BAM2FASTA — конвертация BAM одной фракции в FASTA + счётчики (v1.5.0)
 //
 // Теория: Kraken2 классифицирует последовательности, а не выравнивания,
-// поэтому BAM превращаем в парные FASTA (samtools fasta -1/-2).
-// Заодно считаем samtools flagstat по обоим BAM — это базовые числа QC gate:
-// размер фракций, доля хоста, консистентность разбиения.
+// поэтому BAM превращаем в FASTA (samtools fasta). Процесс per-fraction:
+// вход (meta[id, fraction], bam) — одна фракция одного образца; общее
+// ядро для обеих точек входа (mode=bam: dehost/host от NIPD; mode=fastq:
+// dehost/host/half от DEHOST).
+//
+// Логика скрипта без изменений от v1.3.0/v1.4.0 (та же семантика чисел):
+//   1) samtools collate -u -O перед fasta: координатно-сортированный BAM
+//      держит мейтов НЕ соседними; без collate часть пар молча теряется
+//      в «singletons» или склеивается позиционно в чужие пары.
+//   2) fasta с -0/-s: single-end прочтения и singletons не улетают молча
+//      в stdout; объединённый <frac>_se.fasta — вход аннотации для SE.
+//
+// Счётчики фракций — bam_counts.py (primary-only, -F 0x900): публикуются
+// в <sample>/qc/counts/*.counts.json и читаются QC gate. flagstat
+// сохраняется только как вход MultiQC.
 // =============================================================================
 process BAM2FASTA {
-    tag { sample_id }
+    tag { "${meta.id}/${meta.fraction}" }
     label 'process_low'
 
+    // NIPT-7 (v1.8.0): samtools + python3 (bam_counts.py). Точного mulled-образа
+    // с этой комбинацией версий нет — all-in-one образ пайплайна.
+    conda 'bioconda::samtools=1.24 conda-forge::python=3.14.7'
+    container params.pipeline_image
+
     publishDir "${params.outdir}", mode: 'copy', pattern: '*.flagstat.txt',
-        saveAs: { fn -> "${sample_id}/qc/flagstat/${fn}" }
+        saveAs: { fn -> "${meta.id}/qc/flagstat/${fn}" }
+    publishDir "${params.outdir}", mode: 'copy', pattern: '*.counts.json',
+        saveAs: { fn -> "${meta.id}/qc/counts/${fn}" }
 
     input:
-    // stageAs с фиксированными именами: защита от коллизии, когда dehost_bam
-    // и host_bam имеют одинаковое имя файла (или это один и тот же файл).
-    tuple val(sample_id), path(dehost_bam, stageAs: 'dehost_input.bam'),
-          path(host_bam, stageAs: 'host_input.bam')
+    tuple val(meta), path(bam)
 
     output:
-    tuple val(sample_id), path('dehost_1.fasta'), path('dehost_2.fasta'),
-          path('host_1.fasta'), path('host_2.fasta'), emit: seqs
-    tuple val(sample_id), path("${sample_id}.dehost.flagstat.txt"),
-          path("${sample_id}.host.flagstat.txt"), emit: stats
+    tuple val(meta), path("${meta.fraction}_1.fasta"),
+          path("${meta.fraction}_2.fasta"),
+          path("${meta.fraction}_se.fasta"), emit: seqs
+    tuple val(meta), path("${meta.id}.${meta.fraction}.counts.json"),
+          emit: counts
+    tuple val(meta), path("${meta.id}.${meta.fraction}.flagstat.txt"),
+          emit: stats
 
     script:
-    // Имена flagstat содержат sample_id: защита от коллизий при стейджинге
-    // и от слияния сэмплов в MultiQC.
+    // Имена counts/flagstat содержат id образца: защита от коллизий при
+    // стейджинге и от слияния сэмплов в MultiQC.
+    // -F 0x900 у fasta — это дефолт samtools, оставляем явно: secondary и
+    // supplementary записи не должны попадать в аннотацию.
     """
-    samtools fasta -@ ${task.cpus} -1 dehost_1.fasta -2 dehost_2.fasta -s /dev/null ${dehost_bam}
-    samtools fasta -@ ${task.cpus} -1 host_1.fasta   -2 host_2.fasta   -s /dev/null ${host_bam}
-    samtools flagstat -@ ${task.cpus} ${dehost_bam} > ${sample_id}.dehost.flagstat.txt
-    samtools flagstat -@ ${task.cpus} ${host_bam}   > ${sample_id}.host.flagstat.txt
+    samtools collate -u -O -@ ${task.cpus} ${bam} | \\
+        samtools fasta -@ ${task.cpus} -F 0x900 \\
+            -1 ${meta.fraction}_1.fasta -2 ${meta.fraction}_2.fasta \\
+            -0 ${meta.fraction}_0.fasta -s ${meta.fraction}_s.fasta -
+    cat ${meta.fraction}_0.fasta ${meta.fraction}_s.fasta \\
+        > ${meta.fraction}_se.fasta
+
+    bam_counts.py --bam ${bam} --sample ${meta.id} \\
+        --fraction ${meta.fraction} \\
+        --out ${meta.id}.${meta.fraction}.counts.json
+
+    samtools flagstat -@ ${task.cpus} ${bam} \\
+        > ${meta.id}.${meta.fraction}.flagstat.txt
     """
 }

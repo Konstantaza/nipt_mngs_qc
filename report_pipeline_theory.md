@@ -55,8 +55,8 @@
 
 ### 1.3 Host-фракция как встроенный негативный контроль
 
-Ключевая дизайн-идея пайплайна. NIPD-система (или стадия hocort в режиме
-fastq) делит прочтения образца на две фракции:
+Ключевая дизайн-идея пайплайна. NIPD-система (или стадия DEHOST в режиме
+fastq, v1.5) делит прочтения образца на две фракции:
 
 - **HOST** — прочтения, выровнявшиеся на геном человека (95–99% данных);
 - **DEHOST** — всё остальное (кандидатный микробный сигнал).
@@ -79,9 +79,11 @@ Comparison model (см. 2.6) формализует это: таксон счи�
 Пайплайн реализует схему из ТЗ:
 
 ```
-RAW fastq → fastp → TRIM fastq → hocort → DEHOST bam + HOST bam
-  → samtools bam2fa → DEHOST/HOST fasta
-  → kraken2 + bracken × {full DB, patho DB (EukPathDB)}
+RAW fastq → fastp → TRIM fastq → DEHOST (1 проход HISAT2
+  --no-spliced-alignment + samtools view по флагам)
+  → DEHOST/HOST/HALF bam → samtools bam2fa → FASTA фракций
+  → ANNOTATE (kraken2 + bracken) × {full DB, patho DB (EukPathDB)}
+    × фракции params.fractions
   → comparison model → Differential profiles → QC gate → MultiQC
 ```
 
@@ -102,47 +104,85 @@ RAW fastq → fastp → TRIM fastq → hocort → DEHOST bam + HOST bam
 фильтрации (критерий `trim_survival`) и `q30_rate` сырых прочтений
 (критерий `q30_rate`). HTML/JSON также попадают в MultiQC.
 
-### 2.2 hocort — разделение на DEHOST/HOST (только mode=fastq)
+### 2.2 DEHOST — разделение на DEHOST/HOST/HALF (только mode=fastq, v1.5)
 
-**Что делает.** HoCoRT (Host Contamination Removal Tool) — обёртка над
-картировщиками. Картирует прочтения на геном человека (мы используем
-HISAT2-индекс) и раздаёт пары по SAM-флагам:
+**Что делает.** Один проход HISAT2 на геном человека с
+`--no-spliced-alignment` (вход — ДНК, сплайсированные выравнивания
+неуместны) + `--summary-file` (статистика выравнивания публикуется в
+`<sample>/qc/dehost/` и идёт в MultiQC). Затем primary-записи
+(`-F 0x900`: без secondary/supplementary) раскладываются по SAM-флагам
+скриптом `bin/dehost_split.sh` в **три** фракции:
 
-- `-f true` → **unmapped** пары (`samtools view -f 13`: paired + read
-  unmapped + mate unmapped) — это DEHOST-фракция;
-- `-f false` → **mapped** пары (`samtools view -F 12 -f 1`) — HOST.
+- **host** — оба мейта картированы (`!unmap && !munmap`; для PE-данных
+  эквивалентно `samtools view -F 12` референсного Pipline1.sh
+  заказчика);
+- **dehost** — оба мейта некартированы (`unmap && munmap`;
+  эквивалент `-f 12`);
+- **half** — полукартированная пара: ровно один мейт картирован
+  (`(unmap && !munmap) || (!unmap && munmap)`).
 
-**Особенности, которые важно знать.**
+Три фракции — **точная партиция** trimmed-прочтений: каждая
+primary-запись попадает ровно в одну фракцию, поэтому QC-критерий
+`consistency` проверяет `dehost + host + half == trimmed` (критерий
+приёмки 3). SE-записи (без флага PAIRED) тоже покрыты: mapped → host,
+unmapped → dehost.
 
-1. *HoCoRT проверяет наличие ВСЕХ поддерживаемых картировщиков при
-   запуске.* Если какого-то из них (bwa-mem2, bbmap, minimap2,
-   biobloomtools…) нет на PATH, hocort завершается с ошибкой ещё до
-   начала работы — даже если вы просите только hisat2. Поэтому в
-   `environment.yml` установлены все перечисленные зависимости, хотя
-   реально используется один HISAT2.
-2. *HoCoRT выдаёт FASTQ, а не BAM.* Контракт NIPD-системы — BAM, поэтому
-   после hocort мы конвертируем `samtools import` (FASTQ → BAM без
-   выравнивания).
-3. *Двойное картирование.* Мы прогоняем hocort дважды (dehost и host),
-   то есть картируем вход два раза. Для toy-теста это неважно; в проде
-   основной режим — `mode=bam`, где эта стадия вообще не выполняется
-   (BAM приходят от NIPD). Однопроходная альтернатива — один прогон
-   hisat2 + два `samtools view` по флагам; при желании модуль легко
-   переписать (см. 5.2).
+**Почему не hocort (история, ≤ v1.4).** HoCoRT — обёртка над
+картировщиками; мы прогоняли его дважды (dehost и host), то есть
+картили вход два раза, HISAT2 работал со сплайсингом по умолчанию
+(некорректно для ДНК), а полукартированные пары не попадали ни в одну
+фракцию и молча терялись. Плюс hocort проверял наличие ВСЕХ
+поддерживаемых картировщиков при запуске и выдавал FASTQ вместо BAM.
+В v1.5 hocort удалён; один прогон выравнивателя + фильтрация по флагам
+решают все четыре проблемы.
 
-### 2.3 samtools — bam2fa и статистика фракций
+**Судьба half-фракции.** Полукартированные пары — QC-категория, а не
+биологическая фракция: публикуются counts JSON и flagstat, в QC JSON
+идут информационные метрики `half_mapped_reads` / `half_mapped_frac`,
+но в ANNOTATE они не отправляются (биологически это преимущественно
+хост с неполным картированием мейта; на toy-данных — 0.07–0.1%
+прочтений).
 
-Три использования в пайплайне:
+### 2.3 samtools — bam2fa и счётчики фракций
 
-- `samtools fasta -1/-2` — конвертация BAM в парные FASTA. Kraken2
-  классифицирует **последовательности**, а не выравнивания, поэтому BAM
-  превращаем обратно в последовательности. Ключ `-s /dev/null` отбрасывает
-  синглтоны (пары, где выжила только одна сторона).
-- `samtools flagstat` — сводная статистика BAM (всего прочтений,
-  скартировано). Это **источник базовых чисел QC gate**: размеры фракций,
-  доля хоста, консистентность разбиения. В режиме `bam` flagstat —
-  единственный якорь размера входа (fastp выполнен upstream).
-- `samtools import` — обратная конвертация FASTQ → BAM после hocort.
+Использования в пайплайне (с v1.5 BAM2FASTA — **per-fraction** процесс:
+один входной BAM = одна фракция одного образца; в mode=fastq это 3
+задачи на образец — dehost/host/half, в mode=bam — 2):
+
+- `samtools collate -u -O | samtools fasta -1/-2 -0/-s` — конвертация
+  BAM в FASTA (v1.3). Kraken2 классифицирует **последовательности**, а
+  не выравнивания, поэтому BAM превращаем обратно в последовательности.
+
+  **Зачем collate.** Kraken2 `--paired` читает R1/R2-файлы позиционно:
+  i-я запись первого файла + i-я запись второго = пара. В
+  координатно-сортированном BAM (стандарт NIPD) мейты не соседние, и
+  экстракция «как есть» ломается: samtools fasta (1.24) пейрингует
+  записи по хэшу имён с ограниченным кэшем, поэтому часть пар молча
+  превращается в «singletons» и **теряется** (на toy-фикстуре — 21%
+  dehost- и 48% host-прочтений); на старых версиях samtools без
+  хэш-пейринга R1/R2 рассинхронизируются, и Kraken2 молча склеивает
+  **чужие пары**. `collate` перегруппирует записи по имени — мейты
+  снова соседние, экстракция полная независимо от сортировки входа.
+
+  **Зачем -0/-s.** Прочтения без флага PAIRED (single-end) и singletons
+  без этих ключей молча улетали в stdout — SE-образец получал пустые
+  R1/R2 и ложный `ZERO_MICROBIOME`. Теперь они пишутся в
+  `<frac>_se.fasta`, который и есть вход аннотации для SE-фракций.
+  `-F 0x900` у fasta (это дефолт samtools, оставлен явно):
+  secondary/supplementary записи в аннотацию не попадают.
+
+- `bam_counts.py` (`samtools view -c -F 0x900`) — **источник базовых
+  чисел QC gate** (v1.3): primary-only счётчики фракций, публикуются как
+  `<sample>.<fraction>.counts.json` (`primary_reads`, `paired_reads`,
+  `unpaired_reads`, `single_end`, `fragments`). Строка «in total»
+  flagstat включает secondary+supplementary и завышала счётчики —
+  теперь QC читает `primary_reads`/`fragments` из counts JSON
+  (`fragments` = пары для PE, прочтения для SE). Заодно автоопределяется
+  single-end (`paired_reads == 0`) — флаг пробрасывается в PROFILE и
+  переключает Kraken2 на однофайловый режим без `--paired`.
+- `samtools flagstat` — сохраняется только как вход MultiQC.
+- `samtools view -b -e '...'` по флагам — разбиение primary-записей на
+  фракции в DEHOST (`bin/dehost_split.sh`, см. 2.2).
 
 ### 2.4 Kraken2 — таксономическая классификация
 
@@ -166,6 +206,12 @@ RAM, процесс убивается OOM-киллером (exit 137–140). В
 с числами прочтений), а per-read вывод направляем в `/dev/null` — он
 огромен и не нужен downstream (storage hygiene).
 
+**С v1.4.0 Kraken2+Bracken — адаптер subworkflow ANNOTATE** (модуль
+`modules/local/annotate_kraken2_bracken.nf` + конвертер
+`bin/kraken2_bracken_to_profile.py`), а не жёстко встроенная стадия:
+процесс производит контракт profile v2 (см. 2.9), и классификатор можно
+заменить правкой dbsheet без изменений downstream-кода.
+
 ### 2.5 Bracken — переоценка видовых изобилий
 
 **Зачем.** Kraken2 консервативен: прочтение, общее для нескольких видов
@@ -181,32 +227,68 @@ RAM, процесс убивается OOM-киллером (exit 137–140). В
 **всегда, когда ни один таксон уровня species не имеет clade-прочтений
 ≥ порога `-t`** (у нас `bracken_min_reads = 10`). Report при этом может
 быть непустым — например, содержать 2 человеческих прочтения. Это ровно
-ситуация «нулевого микробиома» (образец TOY_ZERO). В модуле `profile.nf`
-перед вызовом bracken мы сами считаем такие строки awk-ом; если их нет —
-пишем bracken-файл, состоящий из одного заголовка, и идём дальше.
+ситуация «нулевого микробиома» (образец TOY_ZERO). В адаптере
+`annotate_kraken2_bracken.nf` перед вызовом bracken мы сами считаем
+такие строки awk-ом; если их нет — пишем bracken-файл, состоящий из
+одного заголовка, и идём дальше (конвертер отдаёт пустой профиль
+`status=empty`, см. 2.9).
 **Падение стадии здесь было бы ошибкой дизайна**: отсутствие микробиома —
 это валидный биологический исход, вердикт о нём выносит QC gate
 (FALLBACK / ZERO_MICROBIOME), а не аварийная остановка пайплайна.
 
-### 2.6 Comparison model — дифференциальный профиль (`bin/compare_profiles.py`)
+### 2.6 Comparison model v2 — сравнение профилей фракций (`bin/compare_profiles.py`)
 
-Эвристика обогащения, формализующая идею 1.3. Для каждого вида из
-DEHOST-профиля (Bracken, уровень S):
+Формализует идею 1.3: HOST-фракция — встроенный негативный контроль
+образца. Вопрос модели: **«находим ли мы одно и то же в DEHOST и HOST?»**
+(ожидаем различия). С v1.2 работает только на контракте профиля, с
+v1.4.0 — на **контракте profile v2** (profile.tsv + sidecar profile.json,
+чтение через `bin/profile_io.py`): форматов классификатора скрипт не
+знает.
 
-1. **Фильтр по абсолютному сигналу**: `dehost_reads ≥ bracken_min_reads`
-   (иначе таксон вообще не рассматривается — защита от шума малых чисел);
-2. **Фильтр по обогащению**: `dehost_frac / host_frac ≥ enrichment_fold`
-   (по умолчанию 10×). Если вида нет в HOST вовсе, обогащение считается
-   бесконечным (в JSON сериализуется как `null`, в TSV — `Inf`).
+**Баг v1.0, который это исправило.** Раньше обогащение считалось как
+отношение *долей таксона внутри своего профиля*. Доли нормированы на
+размер своей фракции, а фракции различаются на порядки (dehost ~1–5%
+образца). Поэтому при **равных абсолютных числах прочтений** в dehost и
+host (типичная картина утечки/миссклассификации человеческих повторов)
+fold раздувался до десятков тысяч и таксон ошибочно становился
+`enriched`. Регрессия покрыта юнит-тестом
+(`test_equal_absolute_reads_not_enriched`).
 
-Таксоны, прошедшие оба фильтра, — `enriched`; остальные — `background`.
-Запускается дважды на образец: для полной БД (общий микробный профиль) и
-для patho-БД (панель патогенов, аналог EukPathDB). Именно
-`n_enriched` из patho-сравнения отличает PASS_POSITIVE от PASS_NEGATIVE
-в QC gate.
+**Модель v2.** Для каждого таксона из объединения профилей пары фракций
+(по умолчанию `dehost:host`; пары задаёт `params.compare_pairs`):
 
-Это **эвристика, а не статистический тест** — осознанное решение
-(согласовано при планировании): на low-pass данных с единицами–сотнями
+1. **RPM-нормировка**: `rpm = reads / input_reads_фракции × 10⁶`, где
+   `input_reads` — прочтения на входе классификации фракции (поле
+   контракта). RPM сопоставимы между образцами, в отличие от сырых
+   прочтений.
+2. **Присутствие — по абсолютным прочтениям**: в A при
+   `reads ≥ compare_min_reads`, в B при `reads ≥ compare_host_min_reads`
+   (отдельный порог на абсолютный сигнал в host). Ниже порога в обеих
+   фракциях — таксон не рассматривается.
+3. **Категория**: `both` / `only_A` / `only_B`.
+4. **Флаг enriched (строгий)**: `present_A` И НЕ `present_B` И
+   (`rpm_B == 0` ИЛИ `rpm_A/rpm_B ≥ enrichment_fold`). Общий таксон
+   (`both`) **никогда** не enriched — равные абсолютные числа прочтений
+   обогащения не дают. Компромисс (принят при планировании): патоген с
+   протечкой в host ≥ `compare_host_min_reads` потеряет флаг; при
+   low-pass НИПТ протечка истинного сигнала — единицы прочтений, порог
+   10 это покрывает.
+
+**Сводка сходства профилей** (в `<sample>.<role>.<пара>.compare.json`):
+`n_shared`, `n_only_A`, `n_only_B`; **Jaccard** (доля общих таксонов);
+**Bray–Curtis** (dissimilarity по RPM, 0 = идентичны); **Spearman rho**
+по RPM общих таксонов (нужно ≥ 2 общих; иначе `null`). Плюс
+`n_enriched` и `enriched_taxa` — вход проверки позитивности в QC gate
+(пересечение с панелью мишеней, см. 2.8).
+
+Per-taxon таблица (`compare.tsv`): прочтения и RPM в обеих фракциях,
+категория, fold (`Inf` → `null` в JSON), флаг enriched.
+
+Пара `dehost:all`: «all» синтезируется как dehost+host (сплит —
+партиция прочтений образца), новых прогонов классификатора не нужно.
+
+Это по-прежнему **детерминированная эвристика, а не статистический
+тест** — осознанное решение: на low-pass данных с единицами–сотнями
 прочтений формальные тесты бессильны, а прозрачное правило легко
 калибровать и объяснять клиницистам.
 
@@ -229,36 +311,154 @@ MultiQC сканирует директорию результатов и соб
    (`TOY_NORMAL.fastp.json`, `TOY_NORMAL.dehost.flagstat.txt`, …), а
    `extra_fn_clean_exts` в конфиге срезает суффиксы `.fastp`, `.flagstat`,
    `.kraken2`, `.report` — в отчёте остаются чистые имена образцов.
-3. **Сканируем опубликованные результаты, а не стейджинг.** Процесс
-   MULTIQC получает на вход файлы только ради порядка зависимостей, а
-   сканирует `params.outdir` целиком (путь заранее переведён в
-   абсолютный — относительный внутри work-директории задачи не
-   существует). Ключ `--ignore '*/multiqc/*'` не даёт повторным запускам
-   (`-resume`) заглатывать собственный прошлый вывод.
+3. **Сканируем staged-входы, а не `params.outdir` (v1.1).** Процесс
+   MULTIQC получает каналом ровно те файлы, которые должен увидеть
+   (custom content QC gate, kraken2 reports, flagstat, fastp json/html
+   в mode=fastq), и запускает `multiqc .` внутри work-директории.
+   Раньше сканировался `params.outdir` целиком: в отчёт могли попасть
+   файлы прошлых запусков и посторонние артефакты, а входной канал
+   существовал только ради порядка зависимостей. Теперь содержимое
+   отчёта детерминировано текущим запуском; `publishDir` по-прежнему
+   копирует готовый HTML в `${params.outdir}/multiqc`.
 
 ### 2.8 QC gate (`bin/qc_gate.py`)
 
-Финальный арбитр образца. Собирает метрики всех стадий (flagstat, fastp,
-kraken2 report, diff JSON), проверяет 8 критериев чеклиста и выносит
-один из четырёх статусов:
+Финальный арбитр образца. С v1.1 работает по **контрактному принципу**:
+QC gate не знает форматов классификатора и не глобит файлы — все входы
+явные:
+
+- **контракт profile v2 ×4** — пары `<sample>.<dehost|host>.<full|patho>.
+  profile.tsv` + `.profile.json` (sidecar), произведённые subworkflow
+  ANNOTATE и проверенные VALIDATE_PROFILE (см. 2.9 и
+  `docs/profile_contract.md`). Чтение — только через общий reader
+  `bin/profile_io.py`. Из контракта берутся: `input_reads` (прочтения на
+  входе классификации фракции — база RPM), `classified_reads`,
+  per-taxon строки TSV (отсюда human = строка `taxid 9606`),
+  `db_id`, `annotator` + `annotator_version`. Метрики веток
+  вычисляются **классификаторо-независимо**: `human_frac` — доля
+  прочтений taxid 9606 в TSV dehost.full (0, если БД не содержит human
+  или таксон ниже порога отчётности адаптера), `classified_frac` —
+  `classified_reads / input_reads` из sidecar.
+- **compare JSON ×2** — сводки comparison model v2 (2.6) по обязательной
+  паре dehost:host;
+- **counts JSON ×2 (bam) / ×3 (fastq)** (`<sample>.<fraction>.counts.json`,
+  контракт стадии BAM2FASTA, v1.3) — primary-only счётчики фракций;
+  с v1.5 в режиме fastq добавляется counts JSON half-фракции
+  (полукартированные пары DEHOST, см. 2.2): он входит в критерий
+  `consistency` (теперь `dehost+host+half == trimmed`) и даёт
+  информационные метрики `half_mapped_reads` / `half_mapped_frac`;
+  в режиме bam вместо него stub → half = 0 (поведение v1.4); и
+  **fastp JSON** (в mode=fastq) — парсятся самим QC gate.
+
+Отсутствие или битость любого обязательного артефакта — критерий
+`artifacts_*` с severity `FAIL` и кодом `PIPELINE_ERROR`: образец
+**никогда не пропадает без статуса и не получает молчаливый
+PASS_NEGATIVE**. В main.nf это подкреплено сборкой каналов через
+`join(..., remainder: true)` от авторитетного списка образцов
+samplesheet: даже если upstream-стадия не отдала файл, QC_GATE
+запускается со stub-заглушкой и честно фиксирует PIPELINE_ERROR.
+
+Проверяются критерии чеклиста и выносится один из четырёх статусов:
 
 | Статус | Смысл |
 |---|---|
-| `PASS_POSITIVE` | QC пройден; в patho-профиле есть обогащённые таксоны |
-| `PASS_NEGATIVE` | QC пройден; патогены не детектированы (валидный «ноль») |
+| `PASS_POSITIVE` | QC пройден; обогащённые таксоны patho-БД пересекли панель мишеней |
+| `PASS_NEGATIVE` | QC пройден; позитивности нет — либо панель не пересеклась, либо не задана (`positivity_source`) |
 | `FALLBACK` | Образец не прошёл мягкий критерий: результат **не отдаём**, образец уходит по fallback-ветке с машиночитаемыми кодами причин |
-| `FAIL` | Входные данные неадекватны (мало прочтений / нет kraken-report): анализ невозможен в принципе |
+| `FAIL` | Вход неадекватен или отсутствует обязательный артефакт: анализ невозможен/неполон |
 
 Логика вердикта: любой проваленный критерий с severity `FAIL` → FAIL;
 иначе любой проваленный с severity `FALLBACK` → FALLBACK; иначе PASS
-(знак — по наличию обогащённых патогенов). Критерии, неприменимые в
+(знак — по пересечению с панелью мишеней). Критерии, неприменимые в
 режиме `bam` (q30, trim_survival, consistency — fastp выполнен upstream),
 получают `pass = null` и **не влияют** на вердикт.
+
+Два важных гейтинга v1.1:
+
+1. **Утечка human в dehost** (`dehost_human_frac`) оценивается только при
+   `nonhost_pairs ≥ min_nonhost_reads`: на единицах не-хост прочтений
+   доля human статистически бессмысленна. При нехватке сигнала критерий
+   `pass = null`, а образец падает по `ZERO_MICROBIOME`.
+2. **Позитивность — только по панели мишеней** (`--target_panel`, taxid
+   или имя вида на строку). Без панели позитивность не оценивается:
+   `PASS_NEGATIVE` + `positivity_source: "not_evaluated"` (строгое
+   поведение, выбрано при планировании: «не смотрели» ≠ «нет мишени»).
+   Сводка dehost:host (`comparison_info`) — информационная, на вердикт
+   не влияет.
 
 Главный принцип edge-case: **«нулевой микробиом» или сбой анализа — это
 явный статус FALLBACK с кодом причины, а не пустой или мусорный
 результат**. Полный список критериев, порогов и fallback-правил — в
-`QC_checklist.md`.
+`QC_checklist.md`. Контрактные гарантии покрыты юнит-тестами
+`test/test_qc_gate.py` (pytest, 8 сценариев, включая consistency с
+half-фракцией, v1.5).
+
+### 2.9 Контракт profile v2 и subworkflow ANNOTATE (v1.4.0)
+
+До v1.4.0 стадия PROFILE была жёстко привязана к Kraken2+Bracken:
+замена классификатора требовала правки main.nf и потребителей. В v1.4.0
+введён **классификаторо-независимый контракт профиля** и интерфейс
+subworkflow; полная спецификация — `docs/profile_contract.md`.
+
+**Контракт profile v2** — пара файлов на (образец, фракцию, роль БД):
+
+- **profile.tsv** — per-taxon строки с фиксированными колонками:
+  `sample, fraction, annotator, annotator_version, db_id, taxid, name,
+  rank, reads, abundance`. `reads` — оценка числа прочтений таксона
+  (float допустим — Bracken переоценивает), `abundance = reads /
+  input_reads` ∈ [0,1]. Адаптер может добавлять свои колонки с
+  префиксом `x_` — потребители их игнорируют; неизвестные колонки без
+  префикса запрещены.
+- **profile.json** (sidecar) — счётчики и статус: `contract_version`,
+  идентичность (`sample_id, fraction, role, db_id, annotator,
+  annotator_version`), `input_reads = classified_reads +
+  unclassified_reads`, `status` (`ok`/`empty`). Идентичность живёт в
+  sidecar, потому что у пустого профиля нет строк TSV.
+
+Инварианты (проверяет `bin/validate_profile.py`): `status=empty` ⇔
+ноль строк TSV; идентичность TSV ⇔ sidecar согласована; сумма `reads`
+≤ `classified_reads` (с допуском 1%). **Пустой профиль — валидный
+биологический исход** («нулевой микробиом», TOY_ZERO), а не падение
+стадии. Общий reader — `bin/profile_io.py`; его используют
+compare_profiles.py, qc_gate.py и validate_profile.py — единственное
+место потребителей, знающее устройство пары файлов.
+
+**Subworkflow ANNOTATE** (`subworkflows/local/annotate.nf`):
+
+```
+ANNOTATE(reads, dbsheet) -> profiles: (meta, profile.tsv,
+                                       profile.json, native)
+  reads    — [meta(id, fraction, single_end), r1, r2, se]
+  dbsheet  — строки CSV --dbsheet: [db_id, annotator, path, role]
+```
+
+Внутри: декартово произведение фракций × строк dbsheet → **реестр
+аннотаторов** (branch по колонке `annotator`; неизвестный — явная
+ошибка с именем, а не молчаливая потеря профилей) → процесс-адаптер →
+VALIDATE_PROFILE (framework-процесс: нарушение контракта = падение
+задачи). `native` — сырой отчёт адаптера (у kraken2_bracken это kraken2
+report, идёт в MultiQC; у stub — тестовый текст, у metax — настоящий
+profile.txt, форматы обоих MultiQC игнорирует).
+
+**Добавление аннотатора** (критерий приёмки 3): только (1) новый процесс
+`modules/local/annotate_<id>.nf` с emit той же формы, (2) конвертер
+`bin/<id>_to_profile.py` в контракт v2, (3) строка в dbsheet, (4) одна
+ветка в реестре annotate.nf. **main.nf и потребители (COMPARE, QC_GATE)
+не меняются** — в v1.9.0 доказано fixture-driven адаптером `stub`
+(`annotate_stub.nf` + `stub_to_profile.py`) и mixed-dbsheet Kraken2+stub.
+Старое имя заглушки `metax` (v1.4–1.8) теперь занято настоящим
+MetaX 2.0.3 (`annotate_metax.nf` + `metax_to_profile.py`).
+Точный контракт и план сборки БД/контейнера — `docs/profile_contract.md`, §8;
+реальные результаты — 6.2.
+
+**Осознанная смена семантики `dehost_human_frac`.** В profile.v1 доля
+human бралась из clade-процента отчёта Kraken2 (все прочтения клады
+9606, включая родовые). В v2 — строка `taxid 9606` в TSV (видовой
+уровень адаптера; у Bracken — переоценённые прочтения вида). На
+toy-данных единичные human-прочтения dehost оказываются ниже порога
+отчётности Bracken (`-t 10`), поэтому у TOY_NORMAL метрика сместилась
+0.0003 → 0.0; у TOY_LEAK (массовая утечка) значение сохранилось
+(0.9754). На вердикты это не влияет: порог критерия — 0.05.
 
 ---
 
@@ -304,22 +504,25 @@ include { FASTP } from './modules/local/fastp'
 
 | Оператор | Что делает | Где у нас |
 |---|---|---|
-| `Channel.fromPath` | Канал из файлов по пути/glob | samplesheet, файлы HISAT2-индекса |
-| `splitCsv(header: true)` | Парсит CSV в записи (мапы) | samplesheet → образцы |
+| `Channel.fromPath` | Канал из файлов по пути/glob | файлы HISAT2-индекса (glob `<prefix>.*.ht2`, v1.6) |
+| `Path.splitCsv(header: true)` | Парсит CSV в список записей (мап) — работает и eager, вне канала | eager-валидация samplesheet/dbsheet (v1.6) |
+| `Channel.from` | Канал из списка | провалидированные строки samplesheet/dbsheet → downstream-каналы (v1.6) |
 | `map` | Преобразует каждый элемент | переупаковка кортежей |
-| `flatMap` | 1 элемент → N элементов | 1 образец → 2 фракции (dehost/host) |
-| `combine` | Декартово произведение каналов | фракции × БД = 4 запуска PROFILE |
+| `flatMap` | 1 элемент → N элементов | 1 образец → 2–3 фракции (dehost/host/half) |
+| `combine` | Декартово произведение каналов | профили × пары фракций (COMPARE); профили/сводки × `ch_n_dbs` |
 | `filter` | Оставляет элементы по условию | разделение профилей dehost/host |
-| `join` | Соединяет каналы по общему ключу | сбор всех метрик образца для QC gate |
-| `groupTuple` | Группирует по ключу в списки | 4 kraken-report образца → один кортеж |
-| `mix` | Сливает каналы | зависимости MULTIQC |
-| `collect` | Схлопывает канал в один элемент-список | «ждать всех» перед MULTIQC |
-| `Channel.of` | Канал из литералов | список БД `[full, path]` |
+| `join` | Соединяет каналы по общему ключу | сбор всех метрик образца для QC gate (с `remainder: true` — образец не теряется при отсутствии артефакта); внутренние join — с `failOnMismatch: true` |
+| `groupTuple` | Группирует по ключу в списки | профили/сводки образца → один кортеж (по `groupKey` с явным size, v1.5) |
+| `mix` | Сливает каналы | входы MULTIQC; ветка all в `ch_reads` |
+| `collect` | Схлопывает канал в один элемент-список | staged-входы MULTIQC; файлы индекса HISAT2 |
+| `Channel.value` | Value-канал (многоразовое значение) | панель мишеней; `ch_n_dbs` (v1.6) |
 
 Ключевой приём — **ключевые кортежи**: элементы каналов имеют вид
 `[ключ, ...payload...]`, и `join`/`groupTuple` сшивают потоки по ключу.
-Для COMPARE ключ составной: `"${sample}|||${db}"` — так dehost- и
-host-профили одного образца и одной БД встречаются в одной задаче.
+Ключи — кортежи (v1.5): `[id, role]` в COMPARE, `meta[id, fraction]` в
+BAM2FASTA/ANNOTATE — так dehost- и host-профили одного образца и одной
+БД встречаются в одной задаче, а рассинхрон — громкая ошибка
+(`failOnMismatch`), а не молчаливая потеря.
 
 ### 3.4 publishDir и saveAs
 
@@ -371,7 +574,8 @@ script-блока был проинтерполирован движком ка�
 привязку всех последующих значений и полностью исказило сгенерированную
 команду (пороги и пути подставились не в те места). Правило: **в
 комментариях script-блока не использовать `$`**; bash-переменные в самом
-скрипте экранировать как `\$VAR` (см. awk-строку в `profile.nf`).
+скрипте экранировать как `\$VAR` (см. awk-строку в
+`modules/local/annotate_kraken2_bracken.nf`).
 
 ---
 
@@ -384,75 +588,201 @@ nipt_mngs_qc/
 ├── main.nf                 # workflow: граф стадий и каналов
 ├── nextflow.config         # параметры, пороги QC, ресурсы, профили
 ├── multiqc_config.yaml     # конфиг MultiQC
-├── environment.yml         # conda-окружение
+├── environment.yml         # conda-окружение, все инструменты с точными пинами (v1.8)
+├── Dockerfile              # all-in-one образ из environment.yml: для 3 мульти-
+│                           #   инструментальных процессов в docker-профиле (v1.8)
+├── .dockerignore           # исключения контекста docker build (v1.7)
 ├── QC_checklist.md         # формальный чеклист QC (критерии/пороги/fallback)
 ├── assets/
-│   └── no_fastp.json       # пустой stub fastp-отчёта для mode=bam
+│   ├── no_fastp.json       # stub fastp-отчёта для mode=bam ({"stub": true})
+│   ├── no_panel.txt        # пустой stub панели мишеней (панель не задана)
+│   └── missing.txt         # пустой stub отсутствующего артефакта (join remainder)
 ├── bin/                    # скрипты на PATH каждой задачи (Nextflow кладёт bin/ в PATH)
+│   ├── profile_io.py       # общий reader контракта profile v2 (2.9)
+│   ├── validate_profile.py # валидатор контракта profile v2 (2.9)
+│   ├── kraken2_bracken_to_profile.py  # конвертер адаптера Kraken2+Bracken
+│   ├── stub_to_profile.py  # fixture-driven тестовый аннотатор (NIPT-16)
+│   ├── metax_prepare.py   # проверка full-индекса и уникальные ID для SE
+│   ├── metax_to_profile.py # настоящий MetaX profile.txt -> profile v2
 │   ├── compare_profiles.py # comparison model (2.6)
+│   ├── bam_counts.py       # primary-only счётчики фракции BAM (2.3)
+│   ├── dehost_split.sh     # партиция BAM по SAM-флагам host/dehost/half (2.2, v1.5)
+│   ├── sum_counts.py       # слияние counts JSON конституентов ветки all (v1.5)
 │   └── qc_gate.py          # QC gate (2.8)
+├── docs/
+│   └── profile_contract.md # спецификация контракта profile v2 + ANNOTATE (2.9)
 ├── modules/local/          # по процессу на файл
 │   ├── fastp.nf
-│   ├── hocort_split.nf
-│   ├── bam2fasta.nf
-│   ├── profile.nf
+│   ├── dehost.nf           # DEHOST: 1 проход HISAT2 + сплит по флагам (2.2, v1.5)
+│   ├── bam2fasta.nf        # per-fraction BAM -> FASTA + counts (2.3, v1.5)
+│   ├── make_all.nf         # синтез фракции all из конституентов (v1.5)
+│   ├── annotate_kraken2_bracken.nf  # адаптер Kraken2+Bracken (2.9)
+│   ├── annotate_stub.nf             # fixture-driven stub, без классификатора
+│   ├── annotate_metax.nf            # настоящий MetaX 2.0.3
+│   ├── validate_profile.nf          # framework-валидация контракта (2.9)
 │   ├── compare.nf
 │   ├── qc_gate.nf
 │   └── multiqc.nf
+├── subworkflows/local/
+│   └── annotate.nf         # subworkflow ANNOTATE + реестр аннотаторов (2.9)
 └── test/
     ├── make_toy_data.py    # генератор toy FASTQ
+    ├── make_test_bams.py   # генератор BAM-фикстур TOY_SORTED/TOY_SE (v1.3)
     ├── build_toy_db.sh     # сборка мини-БД kraken2/bracken + HISAT2-индекса
-    └── toy/                # refs, мини-таксономия, db_full, db_patho, host_index, FASTQ, BAM
+    ├── run_smoke.sh        # сквозной smoke-harness: pytest + 4 прогона + сверка
+    ├── check_smoke.py      # сверка результатов smoke-прогонов с ожиданиями (v1.7)
+    ├── conftest.py         # helpers фикстур контракта profile v2 (v1.4)
+    ├── test_qc_gate.py     # юнит-тесты QC gate (pytest, 8 сценариев, v1.5)
+    ├── test_compare_profiles.py  # юнит-тесты comparison model v2 (6 сценариев)
+    ├── test_bam_counts.py  # юнит-тесты счётчиков BAM (4 сценария, v1.3)
+    ├── test_dehost_split.py # юнит-тесты партиции DEHOST по флагам (4 сценария, v1.5)
+    ├── test_sum_counts.py  # юнит-тесты слияния counts JSON ветки all (3 сценария, v1.5)
+    ├── test_validate_profile.py  # юнит-тесты валидатора контракта (7 сценариев, v1.4)
+    ├── test_kraken2_bracken_to_profile.py  # юнит-тесты конвертера (5 сценариев, v1.4)
+    ├── test_stub_to_profile.py   # 8 тестов fixture-driven stub
+    ├── test_metax_to_profile.py  # 11 тестов реального формата и ошибок
+    ├── test_metax_prepare.py     # 4 теста full-индекса/SE ID
+    ├── fixtures/           # реальные MetaX profile_full/pathogen.txt
+    └── toy/                # refs, мини-таксономия, db_full, db_patho, host_index,
+                            # FASTQ, BAM, target_panel.txt,
+                            # dbsheet.csv, dbsheet_stub.csv, dbsheet_mixed.csv,
+                            # dbsheet_metax_real.csv, stub_fixtures/,
+                            # db_metax_full/, db_metax_patho/ (индексы MetaX 2),
+                            # invalid/ — битые samplesheet-фикстуры для
+                            # проверки fail-fast валидации (v1.6)
 ```
 
 ### 4.2 Поток данных
 
 ```
-mode=fastq:  samplesheet ──► FASTP ──► HOCORT_SPLIT ──┐
-mode=bam:    samplesheet (dehost_bam, host_bam) ──────┤
-                                                      ▼
-                                            BAM2FASTA ──► flagstat ×2 ─┐
-                                                  │                    │
-                       flatMap: 2 фракции ────────┤                    │
-                       combine: × 2 БД            ▼                    │
-                                        PROFILE (kraken2+bracken) ×4 ──┤
-                                                  │                    │
-                       join по (sample, db)       ▼                    │
-                                        COMPARE ×2 (full, patho)       │
-                                                  │                    │
-                       join по sample             ▼                    ▼
-                                        QC_GATE ◄── flagstat + fastp + reports + diffs
-                                                  │
+mode=fastq:  samplesheet ──► FASTP ──► DEHOST ──┐   (1 проход HISAT2
+mode=bam:    samplesheet (dehost_bam, host_bam) ┤    --no-spliced-alignment
+                                                ▼    + сплит по флагам)
+                                BAM2FASTA per-fraction (collate|fasta
+                                -1/-2/-0/-s + counts + flagstat)
+                                fastq: dehost|host|half   bam: dehost|host
+                                          │ counts JSON ────────────────┐
+                       ['all' в params.fractions] ▼                     │
+                                MAKE_ALL (cat FASTA конституентов       │
+                                          + sum_counts.py)              │
+                                          ▼                             │
+                       фильтр fraction ∈ params.fractions               │
+                       (+ single_end из counts)                         │
+                       --dbsheet ──► ANNOTATE (реестр адаптеров:        │
+                                      kraken2_bracken | stub | metax)   │
+                                      × фракции × БД                    │
+                                      + VALIDATE_PROFILE ───────────────┤
+                                                  │ profile.tsv +       │
+                       join по [sample, role]     ▼  profile.json       │
+                       (failOnMismatch)      COMPARE ×2 (full, patho)   │
+                                                  │  (контракт v2)      │
+                       join(remainder) от списка  ▼                    ▼
+                       образцов samplesheet  QC_GATE ◄── counts ×2/×3 + fastp
+                                                  │      + profile v2 ×4
+                                                  │      + compare JSON ×2 + панель
                                                   ▼
-                                        MULTIQC (по всему outdir)
+                                        MULTIQC (только staged-входы;
+                                                 flagstat, hisat2 summary
+                                                 и native адаптеров идут сюда)
 ```
 
 ### 4.3 Построчный разбор main.nf
 
-1. **Вход.** В зависимости от `params.mode` samplesheet парсится в канал
-   `[sample, r1, r2]` (fastq) или `[sample, dehost_bam, host_bam]` (bam).
-   В режиме bam в канал fastp-отчётов подставляется stub
-   `assets/no_fastp.json` — QC gate распознаёт его и помечает
-   fastp-критерии как «не оцениваются».
-2. **BAM2FASTA** — общее ядро обеих точек входа: BAM → парные FASTA +
-   flagstat. Входные BAM стейджатся с фиксированными именами
-   (`stageAs: 'dehost_input.bam'` / `'host_input.bam'`) — иначе Nextflow
-   падает с «input file name collision», если dehost и host BAM имеют
-   одинаковое имя файла (наш тест TOY_LEAK — ровно такой случай).
-3. **PROFILE.** `flatMap` разворачивает образец в два элемента
-   (dehost/host), `combine` с каналом БД даёт декартово произведение —
-   4 задачи на образец. Внутри — kraken2 + защищённый вызов bracken
-   (edge case 2.5).
-4. **COMPARE.** Профили помечаются составным ключом `sample|||db`,
-   разделяются `filter` на dehost/host и сшиваются `join` — в одну
-   задачу попадает ровно пара профилей одного образца и одной БД.
-5. **QC_GATE.** Три `join` по `sample` собирают в один кортеж flagstat
-   обеих фракций, fastp JSON, список из 4 kraken-report
-   (`groupTuple`) и список из 2 diff JSON. Порядок файлов в списках не
-   гарантирован, поэтому внутри задачи они раскладываются по папкам и
-   ищутся glob-ом в `qc_gate.py`.
-6. **MULTIQC.** Входной канал нужен только как барьер («ждать всех»);
-   сканируется весь `outdir` (абсолютный путь).
+0. **Обязательные параметры и входные CSV (v1.6).** До построения
+   каналов и старта задач проверяются: `params.mode` ∈ {fastq, bam};
+   `--input` и `--dbsheet` заданы всегда, `--host_index` — при
+   mode=fastq. Затем samplesheet и dbsheet парсятся **eager**
+   (`Path.splitCsv` — тот же парсер, что у канального splitCsv, поэтому
+   валидация и downstream видят одни и те же строки): обязательные
+   колонки режима, непустые значения, уникальность `sample` (и
+   уникальность `role` в dbsheet), существование каталогов БД. Любое
+   нарушение — `error` с понятным сообщением до старта задач (до v1.6:
+   `file(null)` с невнятной ошибкой или молчаливый пустой канал →
+   «успешный» прогон без результатов). Пути из CSV резолвит
+   `resolveCsvPath`: абсолютные (`/...`) и URI (`s3://`, `https://`,
+   `file://`, ...) — как есть; относительные — от каталога самого CSV
+   (а не от launchDir).
+0b. **Фракции (v1.5).** `params.fractions` (default `'dehost,host'`)
+   валидируется при старте: подмножество `{dehost, host, all}`, без
+   дубликатов; `dehost` и `host` обязательны (их профили читает QC
+   gate). `half` в списке недопустима — это QC-категория, в аннотацию
+   она не идёт никогда.
+1. **Вход.** Каналы строятся из уже провалидированного списка строк
+   (`Channel.from(sheet_rows)`): `[sample, r1, r2]` (fastq) или сразу
+   per-fraction канал `(meta[id, fraction], bam)` (bam). В режиме fastq
+   сырые прочтения идут в FASTP, затем в **DEHOST (v1.5)**: один проход
+   HISAT2 `--no-spliced-alignment` + `dehost_split.sh` → три BAM
+   (dehost, host, half), которые `flatMap` разворачивают в тот же
+   per-fraction канал `(meta, bam)`. HISAT2-индекс стейджится glob'ом
+   `<prefix>.*.ht2` с `checkIfExists` (v1.6; раньше `<prefix>.*`
+   захватывал и посторонние файлы рядом с префиксом); непустота glob'а
+   проверяется eager, до старта задач. В режиме bam в канал
+   fastp-отчётов подставляется stub `assets/no_fastp.json` — QC gate
+   распознаёт его и помечает fastp-критерии как «не оцениваются».
+2. **BAM2FASTA (per-fraction, v1.5)** — общее ядро обеих точек входа:
+   одна задача на (образец, фракцию): `samtools collate -u -O |
+   samtools fasta -1/-2 -0/-s` (восстановление пар независимо от
+   сортировки входа + захват SE/singletons, см. 2.3) + счётчики
+   `bam_counts.py` (primary-only counts JSON) + flagstat (только для
+   MultiQC). Коллизия одинаковых имён BAM (TOY_LEAK: dehost = host)
+   исчезла сама: каждая фракция — отдельная задача со своей
+   work-директорией, `stageAs` больше не нужен.
+3. **MAKE_ALL (v1.5, только при `'all'` в fractions).** Выходы
+   BAM2FASTA группируются по образцу через `groupKey` с явным size
+   (3 конституента в fastq: dehost+host+half; 2 в bam: dehost+host) —
+   `groupTuple` не зависает на неполных группах. Процесс конкатенирует
+   FASTA конституентов (`cat *_1.fasta` и т.д.: алфавитный порядок glob
+   одинаков для `_1`/`_2`/`_se` → мейты остаются синхронными) и суммирует
+   counts (`bin/sum_counts.py`, `single_end` = AND). Новый прогон
+   выравнивателя не нужен.
+4. **ANNOTATE (v1.4, без изменений интерфейса).** Per-fraction выходы
+   BAM2FASTA сшиваются `join(seqs, counts, failOnMismatch: true)` по
+   кортежному ключу meta `[id, fraction]` (обе стороны обязаны
+   существовать), фильтруются по `params.fractions` (half отсекается)
+   и дополняются `single_end` из counts JSON (`JsonSlurper`). При
+   включённой ветке all подмешивается выход MAKE_ALL. `--dbsheet` с
+   v1.6 парсится eager (см. пункт 0) в список maps
+   `[db_id, annotator, path, role]` — проверка колонок, непустоты и
+   уникальности ролей до старта задач, пути через `resolveCsvPath`
+   (относительные — от директории dbsheet, абсолютные/URI — как есть);
+   число строк dbsheet (`ch_n_dbs`, value-канал) идёт в размеры
+   groupKey ниже.
+   Subworkflow ANNOTATE (2.9) делает декартово произведение фракций ×
+   строк dbsheet, маршрутизирует по реестру аннотаторов и прогоняет
+   каждый выход через VALIDATE_PROFILE.
+5. **COMPARE (v1.5).** Профили помечаются **кортежным** ключом
+   `[sample, role]` (строковый ключ `sample|||role` v1.4 был хрупким),
+   разделяются `filter` на dehost/host и сшиваются
+   `join(..., failOnMismatch: true)` — рассинхрон фракций теперь громкая
+   ошибка, а не молчаливая потеря; `combine` с каналом пар
+   (`params.compare_pairs`) даёт по задаче на (образец, роль БД, пара).
+   На вход идут оба файла контракта (profile.tsv + sidecar) — сырые
+   выходы классификатора здесь не используются. Синтез dehost:all на
+   уровне профилей (compare_profiles.py) сохраняется и не зависит от
+   ветки all (там all = dehost+host по построению).
+6. **QC_GATE (v1.5).** Сборка идёт от **авторитетного списка образцов**
+   (`ch_samples` — из того же eager-провалидированного списка строк
+   samplesheet, v1.6): шесть
+   `join(..., remainder: true)` подтягивают counts JSON dehost, host и
+   half (в bam-режиме half отсутствует → stub → 0), fastp JSON, список
+   пар profile.tsv + profile.json и список из 2 compare JSON.
+   Группировки профилей и сводок — `groupTuple` по **groupKey с явным
+   size** (n_fractions × n_dbs и n_dbs соответственно; n_dbs — из
+   канала-счётчика валидированного dbsheet): группа завершается по
+   счётчику, а не по закрытию канала. Левые join с remainder
+   СОХРАНЯЮТСЯ намеренно: отсутствующий элемент заменяется
+   stub-заглушкой (`assets/missing.txt`, `assets/no_fastp.json`,
+   пустой список) — поэтому **каждый образец samplesheet получает QC
+   JSON**, а отсутствие артефакта фиксируется как FAIL/PIPELINE_ERROR,
+   а не молчаливая пропажа. `failOnMismatch` применяется только к
+   внутренним join (COMPARE, seqs~counts), где обе стороны обязаны
+   существовать. Панель мишеней передаётся отдельным входом
+   (`--target_panel` или stub `assets/no_panel.txt`).
+7. **MULTIQC.** Входной канал — это **весь** вход: custom content QC
+   gate, kraken2 reports, flagstat, summary HISAT2 стадии DEHOST и
+   fastp (mode=fastq) собираются `collect()` и стейджатся в
+   work-директорию, где и запускается `multiqc .`. `params.outdir` не
+   сканируется — отчёт детерминирован текущим запуском.
 
 ### 4.4 Требования
 
@@ -460,10 +790,11 @@ mode=bam:    samplesheet (dehost_bam, host_bam) ──────┤
 |---|---|
 | Вход (bam) | CSV `sample,dehost_bam,host_bam`; координатно-несортированные BAM с парами |
 | Вход (fastq) | CSV `sample,fastq_1,fastq_2`; префикс HISAT2-индекса человека (`--host_index`) |
-| БД | Две Kraken2+Bracken БД: полная (`--db_full`) и панель патогенов (`--db_patho`), собранные с одинаковым `-l` (у нас 150) |
-| RAM | Kraken2: БД целиком в RAM (Standard ≈ 60 GB; параметр `kraken_mem`) |
-| CPU | 8 потоков на kraken-задачу (конфиг), остальное — 2–4 |
-| Инструменты | fastp, hocort (+все его картировщики), hisat2, samtools, kraken2, bracken, multiqc — см. `environment.yml` |
+| БД | `--dbsheet`: CSV `db_id,annotator,path,role` — роли `full` и `patho`; для адаптера `kraken2_bracken` — Kraken2+Bracken БД, собранные с одинаковым `-l` (у нас 150) |
+| RAM | Kraken2: БД целиком в RAM (Standard ≈ 60 GB; параметр `kraken_mem`); при OOM (exit 137–140) задача перезапускается один раз с удвоенной памятью (v1.8); потолок — `process.resourceLimits` |
+| CPU | 8 потоков на kraken-задачу (конфиг), остальное — 2–4; потолок 16 (`resourceLimits`) |
+| Инструменты | Точные пины (v1.8): fastp 1.3.7, hisat2 2.2.3, samtools 1.24, kraken2 2.17.2, bracken 3.1, multiqc 1.35, python 3.14.7 — см. `environment.yml` и директивы `conda`/`container` в модулях (hocort удалён в v1.5) |
+| Nextflow | ≥ 26.04.6 (жёстко: `manifest.nextflowVersion = '!>=26.04.6'`, v1.8) |
 
 ---
 
@@ -477,16 +808,25 @@ mode=bam:    samplesheet (dehost_bam, host_bam) ──────┤
 3. Модули `modules/local/*.nf` — по одному процессу: входы/выходы/скрипт.
 4. `bin/*.py` — нетривиальная логика (comparison model, QC gate).
 
-### 5.2 Как добавить стадию (пример: однопроходный dehost)
+### 5.2 Как добавить стадию (пример: ветка all, реализована в v1.5)
 
-1. Написать `modules/local/dehost_single_pass.nf` с процессом
-   (hisat2 + два `samtools view` по флагам 13 / -F 12).
-2. `include { DEHOST_SP } from './modules/local/dehost_single_pass'`
-   в `main.nf`.
-3. Вставить вызов в ветку `mode == 'fastq'` вместо `HOCORT_SPLIT`,
-   сохранив контракт выхода `(sample, dehost.bam, host.bam)`.
-4. Прогнать `nextflow run ... -resume`: перевыполнятся только новые и
+Рабочий пример — процесс MAKE_ALL (синтез фракции all):
+
+1. Написан `modules/local/make_all.nf` с процессом (cat FASTA
+   конституентов + `sum_counts.py`) и выносимая в тест логика —
+   `bin/sum_counts.py` покрыт юнит-тестами напрямую.
+2. `include { MAKE_ALL } from './modules/local/make_all'` в `main.nf`.
+3. Вызов вставлен под условие `'all' in fractions` — стадия включается
+   параметром `--fractions dehost,host,all` без правок кода; входы
+   сгруппированы `groupKey` с явным size (3 конституента в fastq / 2 в
+   bam), чтобы `groupTuple` не ждал закрытия канала.
+4. Выход подмешан в `ch_reads` — дальше ветка идёт через тот же
+   ANNOTATE, что и остальные фракции (критерий приёмки 1).
+5. Прогон `nextflow run ... -resume`: перевыполняются только новые и
    зависимые задачи.
+
+Тот же рецепт (процесс + include + условие/параметр + groupKey) —
+для любой новой стадии.
 
 ### 5.3 Как добавить QC-критерий
 
@@ -537,53 +877,474 @@ mode=bam:    samplesheet (dehost_bam, host_bam) ──────┤
 
 | Образец | Состав | Режим | Ожидаемый вердикт |
 |---|---|---|---|
-| TOY_NORMAL | 100k пар: 97% human, 2% myco, 0.5% B19, 0.5% ecuniculi | fastq + bam | PASS_POSITIVE |
+| TOY_NORMAL | 100k пар: 97% human, 2% myco, 0.5% B19, 0.5% ecuniculi | fastq + bam | PASS_POSITIVE (панель `test/toy/target_panel.txt` = taxid 284813) |
 | TOY_ZERO | 50k пар: 100% human | fastq | FALLBACK (ZERO_MICROBIOME) |
 | TOY_LEAK | dehost_bam = host_bam = host-BAM от TOY_NORMAL | bam | FALLBACK (DEHOST_FAILURE) |
+| TOY_SORTED | прочтения TOY_NORMAL, картированы hisat2 и отсортированы по координате (+ secondary-записи) | bam | PASS_POSITIVE; профиль ≡ TOY_NORMAL |
+| TOY_SE | прочтения TOY_NORMAL со сброшенными флагами пары (single-end) | bam | PASS_POSITIVE; непустой профиль |
 
 TOY_LEAK моделирует сбой dehost-стадии: «dehost»-файл на самом деле
 содержит чистый хост — QC обязан это поймать по утечке human в dehost
 и по аномально низкой доле хоста.
 
+TOY_SORTED и TOY_SE генерируются из TOY_NORMAL скриптом
+`test/make_test_bams.py` (v1.3) и проверяют исправления bam-режима:
+TOY_SORTED — координатно-сортированный BAM от NIPD (мейты не соседние;
+старый код терял 21%/48% прочтений фракций — фикстура нетривиальна,
+что проверяется при генерации); TOY_SE — single-end вход (старый код
+отправлял все прочтения в stdout → ложный ZERO_MICROBIOME).
+
 ### 6.2 Фактические результаты
 
-Оба прогона завершились успешно (exit 0), все задачи зелёные.
+Оба прогона завершились успешно (exit 0), все задачи зелёные. Прогоны
+выполнены с `--target_panel test/toy/target_panel.txt` (taxid 284813).
+В v1.4.0 прогоны повторены на контракте profile v2 через subworkflow
+ANNOTATE (`--dbsheet test/toy/dbsheet.csv`): все вердикты и метрики
+совпали с v1.3.0, кроме ожидаемого сдвига `dehost_human_frac`
+(семантика v2, см. 2.9: 0.0003 → 0.0 у TOY_NORMAL/TOY_SORTED/TOY_SE —
+единичные human-прочтения ниже порога отчётности Bracken; у TOY_LEAK
+0.9754 сохранилось). Дополнительно выполнен прогон со stub-аннотатором
+metax (`--dbsheet test/toy/dbsheet_metax.csv`, см. ниже).
 
-**Режим fastq** (`test/results_fastq/`):
+**v1.5.0 (перестройка по GNP-3).** Режим bam: QC JSON всех четырёх
+образцов **байт-в-байт идентичны** v1.4.0 (путь BAM2FASTA не меняет
+семантику). Режим fastq: вердикты сохранились, счётчики чуть сместились
+(новый baseline: прямой HISAT2 `--no-spliced-alignment` вместо двух
+прогонов hocort) — TOY_NORMAL: input_pairs 94 983 → **94 930**,
+nonhost_pairs 2 942 → **2 941**, host_fraction 0.969026 → 0.969019;
+TOY_ZERO: nonhost_pairs 2 → **1**. Полукартированные пары, раньше молча
+терявшиеся, теперь видны: **142 прочтения (71 пара)** у TOY_NORMAL и
+**92 (46 пар)** у TOY_ZERO — 0.07–0.1% trimmed. **Критерий приёмки 3
+выполнен точно**: dehost+host+half == trimmed у обоих fastq-образцов
+(`consistency_dev = 0.0`). HISAT2 summary публикуется и виден в MultiQC.
+
+**Режим fastq** (`test/results_fastq/`, числа v1.5.0):
 
 | Образец | Вердикт | Детали |
 |---|---|---|
-| TOY_NORMAL | **PASS_POSITIVE** | все 8 критериев pass; patho diff: E. cuniculi enriched (517 прочтений, fold=inf); full diff: M. genitalium (1904), E. cuniculi (517), B19 (510) — все enriched |
-| TOY_ZERO | **FALLBACK** | причины: `ZERO_MICROBIOME` (nonhost_pairs = 2 < 500) + `DEHOST_FAILURE` (dehost_human_frac = 1.0 > 0.05) |
+| TOY_NORMAL | **PASS_POSITIVE** | все критерии pass; хит панели: *E. cuniculi* (only_A в patho-сравнении, 517 прочтений, fold=Inf); `positivity_source: target_panel`; full-сравнение: 3 микроба only_A enriched, human only_B — Jaccard 0.0, Bray–Curtis 1.0: профили максимально различны, как и ожидалось; consistency_dev = 0.0 (партиция 5882+183978+142 = 190 002 = trimmed) |
+| TOY_ZERO | **FALLBACK** | причина: `ZERO_MICROBIOME` (nonhost_pairs = 1 < 500). `DEHOST_FAILURE` **больше не выставляется** (v1.1): при 1 не-хост паре утечка human не оценивается (`dehost_human_frac: pass=null`) — доля human на единицах прочтений бессмысленна; consistency_dev = 0.0 (2+94934+92 = 95 028 = trimmed) |
 
 **Режим bam** (`test/results_bam/`):
 
 | Образец | Вердикт | Детали |
 |---|---|---|
-| TOY_NORMAL | **PASS_POSITIVE** | fastp-критерии корректно `null` (не оцениваются); input_pairs = 94 983; host_fraction = 0.969; dehost_human_frac = 0.0003; patho: E. cuniculi enriched (517) — профили идентичны fastq-режиму |
-| TOY_LEAK | **FALLBACK** | причины: `DEHOST_FAILURE` (dehost_human_frac = 0.9754 > 0.05) + `HOST_FRACTION_LOW` (host_fraction = 0.5 < 0.80); patho n_enriched = 0 (dehost ≡ host → обогащения нет) |
+| TOY_NORMAL | **PASS_POSITIVE** | fastp-критерии корректно `null` (не оцениваются); input_pairs = 94 983; host_fraction = 0.969; dehost_human_frac = 0.0 (v1.4: строка taxid 9606 ниже порога Bracken; в v1.3 было 0.0003 по clade-проценту Kraken2); хит панели: *E. cuniculi* — профили идентичны fastq-режиму |
+| TOY_LEAK | **FALLBACK** | причины: `DEHOST_FAILURE` (dehost_human_frac = 0.9754 > 0.05; не-хост пар ~92k ≥ 500 — гейтинг пропускает оценку) + `HOST_FRACTION_LOW` (host_fraction = 0.5 < 0.80); comparison v2 формально фиксирует тождество фракций: **Jaccard 1.0, Bray–Curtis 0.0**, 1 общий таксон (human), 0 enriched |
+| TOY_SORTED | **PASS_POSITIVE** | **критерий 1 (v1.3):** все 4 profile.json идентичны TOY_NORMAL (taxa и input_reads совпали точно), несмотря на координатную сортировку и 70 403 secondary-записи в host BAM — счётчики primary-only их игнорируют (input_pairs = 94 983, как у TOY_NORMAL) |
+| TOY_SE | **PASS_POSITIVE** | **критерий 2 (v1.3):** `single_end=true`, непустой профиль: dehost.full — myco 3794 + ecuniculi 1034 + B19 1020 прочтений (≈ удвоенные числа PE — каждый мейт считается отдельно), input_reads = 5884; хит панели сохраняется |
 
-Все четыре ожидания подтвердились, включая оба edge-case. MultiQC-отчёт
-(`multiqc/multiqc_report.html`) содержит обе выборки с чистыми именами:
-секции fastp (только fastq-режим), samtools flagstat (4 файла на
-режим), kraken (8), и первой секцией — таблицу «Metagenome QC gate»
-с вердиктами.
+Все четыре ожидания подтвердились, включая оба edge-case и новый гейтинг
+утечки. MultiQC-отчёт (`multiqc/multiqc_report.html`) собран **только из
+staged-входов** (v1.1): секции fastp (только fastq-режим), samtools
+flagstat, kraken, и первой секцией — таблица «Metagenome QC gate»
+с вердиктами; `params.outdir` не сканируется.
+
+**Исторический прогон со stub-аннотатором metax (v1.4.0, критерий приёмки 3).**
+`--dbsheet test/toy/dbsheet_metax.csv` (обе роли → `annotator: metax`):
+пайплайн завершился успешно **без каких-либо правок main.nf и
+потребителей** — добавление аннотатора потребовало только новый процесс
++ конвертер + строку dbsheet (+ ветку реестра в annotate.nf). Stub
+относит все прочтения к taxid 2097 (*M. genitalium*, вне панели 284813)
+в обеих фракциях: все 16 профилей прошли VALIDATE_PROFILE,
+`dehost_human_frac` = 0, `classified_frac` = 1.0, сравнение dehost:host
+даёт Jaccard 1.0 / Bray–Curtis 0.0 / 0 enriched → TOY_NORMAL, TOY_SORTED,
+TOY_SE — **PASS_NEGATIVE** (панель не пересеклась), TOY_LEAK —
+**FALLBACK** по `HOST_FRACTION_LOW` (критерий на счётчиках counts JSON,
+от аннотатора не зависит). QC gate, COMPARE и MultiQC работали на
+выходе stub'а штатно. В v1.5.0 прогон повторён после перестройки графа —
+результаты идентичны (регрессия адаптера).
+Начиная с v1.9.0 это `annotator=stub`, `dbsheet_stub.csv`,
+`test/results_stub/`; имя `metax` обозначает только настоящий инструмент.
+
+**Прогон с веткой all (v1.5.0, критерий приёмки 4).**
+`--fractions dehost,host,all` — без каких-либо правок кода: в обоих
+режимах для каждого образца × строки dbsheet дополнительно публикуются
+профили `<sample>.all.<role>.profile.tsv/.json` того же контракта
+(прошли VALIDATE_PROFILE), QC JSON образцов **байт-в-байт идентичны**
+прогону без all (ветка не влияет на вердикты). Синтез корректен:
+в bam all = dehost+host (у TOY_NORMAL 189 966 = 5 884 + 184 082;
+primary all совпал с суммой конституентов у всех 4 образцов,
+`single_end` = AND: у TOY_SE true, у остальных false); в fastq
+all = dehost+host+half = trimmed (TOY_NORMAL: 190 002; TOY_ZERO:
+95 028). Профиль all.full у TOY_NORMAL биологически осмыслен: human
+89 795 (94.5%), myco 1 904, ecuniculi 517, B19 510 — состав исходного
+образца до dehost.
+
+**Базовые юнит-тесты до NIPT-16** (pytest, 37/37 зелёные; полный
+набор v1.9.0 — 60/60, см. ниже). `test/test_qc_gate.py`:
+отсутствие sidecar profile.json → FAIL/PIPELINE_ERROR; отсутствие сводки
+patho → FAIL/PIPELINE_ERROR (а не PASS_NEGATIVE); human_frac = 1.0 при
+2 не-хост парах → без DEHOST_FAILURE; битый fastp JSON (оба варианта) →
+FAIL/PIPELINE_ERROR; панель хит/мимо/отсутствует →
+PASS_POSITIVE/PASS_NEGATIVE(target_panel)/PASS_NEGATIVE(not_evaluated);
+полный контракт с annotator и db_id. `test/test_compare_profiles.py`:
+идентичные профили → Jaccard 1.0 и 0 only_*-таксонов; равные абсолютные
+прочтения → НЕ enriched (регрессия бага v1.0); явное обогащение only_A
+ловится, шум ниже порогов отсечён; несовпадение db_id/версии контракта →
+ошибка; пара dehost:all (синтез all = dehost+host); отсутствие ссылок на
+колонки классификатора в исходнике. `test/test_bam_counts.py` (v1.3):
+парные счётчики корректны; **критерий 3** — secondary/supplementary
+записи не меняют счётчики (при росте полного числа записей); SE BAM →
+single_end=true и fragments = прочтениям; пустой BAM → нули.
+`test/test_validate_profile.py` (v1.4): валидная пара проходит (включая
+--expect-*); пропавшая колонка TSV, неизвестная колонка без `x_`,
+нарушение `input = classified + unclassified`, `status=empty` при
+непустом TSV, сумма reads > classified → INVALID; колонка `x_*` и
+пустой профиль (только заголовок, status=empty) — валидны.
+`test/test_kraken2_bracken_to_profile.py` (v1.4): выход конвертера
+проходит валидатор; счётчики sidecar = U+R из report; reads/abundance/
+rank/сортировка строк корректны; пустой bracken → status=empty; report
+без строки U → unclassified=0; строка human (taxid 9606) проходит в TSV;
+таксоны с new_est_reads=0 отбрасываются.
+
+**Валидация входов (v1.6).** Критерий 1: samplesheet с относительными,
+абсолютными и `file://`-путями дают **байт-в-байт одинаковые** выходы
+(QC JSON, профили, compare TSV; отличаются только fastp/multiqc HTML с
+путями и timestamp'ами) в обоих режимах; QC JSON всех прогонов
+идентичны baseline v1.5.0 с точностью до поля `pipeline_version`.
+Критерий 2: 11 негативных кейсов — без `--input`, без `--dbsheet`, без
+`--host_index` (mode=fastq), невалидный `--mode`, дубль `sample`,
+отсутствие обязательной колонки, пустая ячейка пути, samplesheet без
+строк данных, несуществующий префикс индекса, несуществующий каталог
+индекса, несуществующий файл samplesheet — все падают с exit code 1 и
+понятным сообщением **до старта задач** (0 задач в логе). Критерий 3:
+рядом с префиксом индекса подложены `human.fa`, `human.ht2.bak`,
+`human.txt`, `human.1.ht2.tmp`, `humanity.1.ht2` — в work-директории
+DEHOST застейджены только `human.1..8.ht2`, результаты прогона
+идентичны запуску без декоев. Регрессия ветки all (оба режима):
+QC JSON идентичны baseline v1.5.0 (кроме версии), профили all на месте.
+
+**Сквозной smoke-harness (v1.7).** `bash test/run_smoke.sh` — одна
+команда: pytest (37/37), затем три end-to-end прогона (mode=bam и
+mode=fastq с Kraken2-dbsheet, mode=bam с dbsheet_metax) и сверка
+`test/check_smoke.py`: набор образцов (никто не потерян и не лишний),
+статус и fallback_reasons каждого образца (точное совпадение),
+непустой pipeline_version, сравнение dehost:host роли full (у
+TOY_NORMAL/TOY_SORTED/TOY_SE в bam и обоих образцов в fastq наборы
+таксонов фракций различаются — Jaccard < 1 и n_only_A+n_only_B > 0;
+у TOY_LEAK совпадают — Jaccard = 1.0, only_* = 0: формальная детекция
+сбоя dehost), обязательные артефакты (профили tsv+json по фракциям и
+ролям БД, counts JSON включая half в fastq, compare tsv/json,
+qc_mqc.tsv, fastp json и hisat2 summary в fastq, multiqc_report.html).
+Профиль `test` самодостаточен: input/dbsheet/host_index/target_panel
+заданы внутри профиля — прогоны bam и fastq идут без единого
+параметра. (Побочный эффект: негативный кейс v1.6 «-profile test без
+--input» теперь не падает, а запускает toy-прогон; fail-fast на
+отсутствие --input срабатывает только вне профиля test.) Негативные
+тесты check_smoke.py: перевёрнутый статус,
+удалённый артефакт, испорченный compare JSON, потерянный образец —
+каждый даёт exit 1 с понятным сообщением. Полный локальный прогон
+harness — ~1 минута. После бампа версии все пять baseline-каталогов
+test/results_* перегенерированы: 175 JSON байт-в-байт идентичны
+baseline v1.6.0 с точностью до поля pipeline_version (отличаются
+только run-метаданные multiqc_data.json — пути work/ и дата сборки
+отчёта).
+
+**Окружение: пины, per-process контейнеры, ретрай памяти (NIPT-7,
+v1.8.0).** Все инструменты закреплены точной версией в
+`environment.yml` (fastp 1.3.7, kraken2 2.17.2, bracken 3.1,
+samtools 1.24, hisat2 2.2.3, multiqc 1.35, python 3.14.7,
+pytest 9.1.1; раньше bracken/samtools/pytest были без пина, а
+python=3.11 не соответствовал фактическому 3.14.7). В каждый из 10
+модулей добавлены директивы `conda` (точные пакеты bioconda/
+conda-forge) и `container`. Стратегия контейнеров — смешанная:
+одно-инструментальные процессы (FASTP, MAKE_ALL, ANNOTATE_METAX,
+VALIDATE_PROFILE, COMPARE, QC_GATE, MULTIQC) тянут точные образы с
+quay.io/biocontainers (теги сверены по API quay.io с билдами
+установленных пакетов), а три мульти-инструментальных (DEHOST =
+hisat2+samtools, BAM2FASTA = samtools+python3,
+ANNOTATE_KRAKEN2_BRACKEN = kraken2+bracken+python3) используют
+all-in-one образ `params.pipeline_image = nipt_mngs_qc:1.8.0`
+(Dockerfile из того же закреплённого environment.yml). Причина:
+готовых mulled-образов с точными комбинациями наших версий на
+quay.io нет — проверено вычислением имён/тегов mulled-v2 по алгоритму
+galaxy-tool-util (sha1 от отсортированных имён пакетов / их версий)
+и опросом API quay.io: например, в репозитории hisat2+samtools
+(`mulled-v2-a97e90b3…`) есть только старые сочетания (hisat2 2.2.1 +
+samtools 1.16.1 и старше), а kraken2 2.17.2 + bracken 3.1 не
+собирались вовсе. Понижать пины под чужие образы нельзя (версии
+оттестированы), дробить процессы — слишком инвазивно. Профиль `conda`
+переведён с монолитного `process.conda = environment.yml` на
+per-process окружения из директив модулей; профиль `docker` — с
+единого `process.container` на per-process директивы.
+**Исправлен баг ретрая памяти Kraken2**: в v1.7.0 `memory` в
+`withLabel:process_kraken` задавалась дважды, и второе замыкание
+`params.kraken_mem * (1 + 0.5 * task.attempt)` умножало СТРОКУ
+`'60 GB'` на число — Groovy повторял строку, и на второй попытке
+получался невалидный `'60 GB60 GB'`. Теперь:
+`memory = { (params.kraken_mem as MemoryUnit) * task.attempt }` —
+попытка 1 получает kraken_mem, попытка 2 — удвоенное значение.
+Добавлены `process.resourceLimits` (потолок 16 CPU / 2×kraken_mem /
+24 ч на задачу) и `manifest.nextflowVersion = '!>=26.04.6'` (жёсткий
+отказ на старых версиях). В профиле `test` убрано статическое
+`memory = '2 GB'` у `process_kraken` — оно затирало замыкание;
+теперь память задаёт `params.kraken_mem = '2 GB'` (2 GB → 4 GB),
+проверено слиянием `nextflow config -profile test`. **Проверка
+критерия 3 (искусственный exit 137)**: в PATH подложен shim `kraken2`,
+падающий с exit 137 ровно один раз (атомарный mkdir-маркер), дальше
+делегирующий настоящему kraken2; прогон mode=bam с `-with-trace`:
+задача `ANNOTATE_KRAKEN2_BRACKEN (TOY_SORTED/dehost/full)` — попытка 1
+FAILED exit=137 memory=2 GB, попытка 2 COMPLETED exit=0 memory=4 GB
+(удвоение подтверждено полем memory в trace), в логе ровно одна
+запись «Execution is retried», вердикты всех образцов после ретрая
+совпали с ожиданиями check_smoke. Регрессия: pytest 37/37, локальный
+harness 127 с, все пять baseline-каталогов перегенерированы — 170
+JSON байт-в-байт идентичны v1.7.0 с точностью до pipeline_version,
+числа файлов совпали. Дополнительно прогнан fastq-режим с
+`-profile test,conda`: все 6 уникальных per-process conda-окружений
+(fastp; hisat2+samtools; samtools+python; kraken2+bracken+python;
+python; multiqc) собраны conda'ой из директив модулей, прогон
+завершился успешно, вердикты совпали с ожиданиями check_smoke. NB: пакет bracken 3.1 самоидентифицируется
+строкой «3.0.1» (константа VERSION в скрипте не бампнута upstream) —
+в поле `annotator` QC JSON остаётся `2.17.2+3.0.1`, это ожидаемо.
+
+**Второй адаптер: stub + MetaX (NIPT-16, v1.9.0).**
+Реестр ANNOTATE теперь содержит `kraken2_bracken`, `stub`, `metax`.
+Старая заглушка под именем metax выделена в отдельный fixture-driven
+адаптер: `ANNOTATE_STUB` читает `<path>/<db_id>.tsv`
+(taxid/name/rank/weight). Вес задаёт долю входных записей, остаток
+весов уходит в unclassified; в поставленных fixtures весь сигнал
+отнесён к 2097. Никакой классификации stub не выполняет.
+
+Критерий 1: `dbsheet_mixed.csv` = Kraken2(full)+stub(patho),
+один сквозной прогон без изменений `main.nf`/COMPARE и алгоритма QC.
+Все профили прошли VALIDATE_PROFILE. NORMAL/SORTED/SE получили
+**PASS_NEGATIVE**, LEAK — **FALLBACK[DEHOST_FAILURE, HOST_FRACTION_LOW]**.
+Это ожидаемое следствие разделения ролей: позитивность идёт по
+пересечению панели с enriched patho-таксонами (stub вне панели),
+контроль human и full-сравнение остаются Kraken2. Контракт и QC-логика
+не подстраивались ради одинаковых вердиктов.
+
+Критерии 2–3: `ANNOTATE_METAX` действительно запускает
+**MetaX 2.0.3**, а конвертер читает его headerless profile.txt:
+col1/2/3/4 → name/taxid/rank/reads; col9/13 → x_cov_prob/x_chunk_prob,
+включая `NA`. `--host 9606` даёт суффикс `.pathogen` и 16 колонок.
+На пустом входе процесс не запускает MetaX (инструмент отвергает
+пустой FASTA), а выдаёт native-файл 0 байт и empty-профиль.
+При этом TSV контракта всегда непустой (заголовок) и sidecar обязателен.
+
+**Отличия от буквальной постановки зафиксированы, а не скрыты:**
+
+- В 2.0.3 CLI/DB отличаются от 0.9: встроенный маппер (без MA),
+  `--db <dir>` с mxi+tsv.gz, PE через `-i/-I`, FASTA-заголовки
+  `genome|contig|s:taxid`, четыре taxdump-файла. Старый metax_db.json
+  этим адаптером не поддерживается; нужна пересборка индекса.
+- Col6 — **проценты относительного изобилия MetaX**, не доля
+  входных прочтений. Например, B19=510/2942≈0.173351, но col6=93.88893.
+  Для неизменности контракта `abundance=reads/input`,
+  исходная col6 сохранена в `x_abundance_pct`.
+- Classified — ceil суммы отчётных reads, ограниченная input,
+  post-filter семантика, не сырой mapping-rate Kraken2.
+  Fractional-индекс запрещён проверкой метадаты до запуска;
+  counts сверх input/NaN/Inf отклоняются конвертером.
+- **SE требует уникальных ID записей.** При снятых paired-флагах
+  BAM может содержать два SE с одинаковым QNAME. Без подготовки
+  MetaX объединял их: 2941 отчётных reads при input=5884.
+  `metax_prepare.py` переименовывает только SE-заголовки последовательно,
+  не меняя последовательностей/числа записей; после исправления
+  classified=5882 при input=5884. PE-путь не меняется.
+
+Выполнен отдельный полный BAM-прогон `dbsheet_metax_real.csv`:
+NORMAL/SORTED/SE — **PASS_POSITIVE**, LEAK —
+**FALLBACK[DEHOST_FAILURE, HOST_FRACTION_LOW]**.
+В TOY_NORMAL dehost.full input=2942, classified=2941:
+myco=1911, E. cuniculi=520, B19=510; dehost.patho classified=520.
+Две fixtures в `test/fixtures/` — **настоящие** сырые выходы именно
+этого инструмента на toy-данных; финальный прогон воспроизвёл обе
+байт-в-байт. `unknown` host-поля без pathogen-таблицы не доказывают
+связь патоген–хозяин; для patho используется отдельная выбранная БД.
+
+Регрессия: **60/60 pytest** (37 прежних + 23 новых), полный
+`bash test/run_smoke.sh` — четыре прогона bam/fastq/stub/mixed,
+exit 0, **69 с** в финальном локальном запуске. Реальный MetaX —
+отдельный успешный запуск, не обязательная часть стандартного harness.
+Шесть baselines (bam/fastq/stub/mixed/bam_all/fastq_all)
+перегенерированы с pipeline_version=1.9.0; сохранены и реальные
+MetaX-результаты. У прежних Kraken2-прогонов различий profiles/counts/
+compare/QC, кроме версии, нет; HTML и MultiQC содержат новые
+пути/времена запуска. Для переименованного stub ожидаемо изменились
+annotator/db_id/native-текст, но не counts, таксоны или вердикты.
+План БД и Docker-варианта, версии и команды:
+`docs/profile_contract.md`, §8. Docker по-прежнему не проверен.
 
 ### 6.3 Что проверено и что нет
 
-**Проверено:** сквозная механика обеих точек входа; все четыре класса
-вердиктов, кроме FAIL (PASS_POSITIVE, PASS_NEGATIVE покрыт веткой
-логики, FALLBACK — двумя разными причинами); edge-case «нулевой
+**Проверено:** сквозная механика обеих точек входа; PASS_POSITIVE (хит
+панели) и FALLBACK двумя разными причинами; edge-case «нулевой
 микробиом» (bracken не падает, вердикт выносит QC gate); детекция сбоя
-dehost; контракт QC JSON; сборка MultiQC; коллизия имён BAM (stageAs).
+dehost (в т.ч. формально: TOY_LEAK даёт Jaccard 1.0 / Bray–Curtis 0.0);
+гейтинг утечки human по min_nonhost_reads; контракт QC JSON
+(annotator, db_id, positivity_source, comparison_info); сборка MultiQC
+из staged-входов; коллизия имён BAM (stageAs); comparison model v2 на
+контракте profile v2 (публикация compare.tsv/json по каждой роли БД);
+координатно-сортированный вход (TOY_SORTED ≡ TOY_NORMAL) и single-end
+вход (TOY_SE, непустой профиль); инвариантность счётчиков к
+secondary/supplementary записям; **замена аннотатора через dbsheet без
+правок потребителей** (fixture-driven stub + mixed Kraken2/stub,
+v1.9; раньше stub назывался metax) и валидация каждого профиля
+VALIDATE_PROFILE; **точная партиция DEHOST (v1.5):
+dehost + host + half = trimmed с отклонением 0.0 на обоих
+fastq-образцах**; учёт half-mapped пар как отдельной QC-фракции;
+**ветка all одним параметром `--fractions dehost,host,all` без правок
+кода в обоих режимах** (MAKE_ALL, профили all проходят
+VALIDATE_PROFILE, счётчики all равны сумме составляющих); ужесточение
+сборки каналов (groupKey вместо groupTuple, failOnMismatch на
+ключевых join); удаление hocort (один прогон HISAT2 вместо двух);
+детекция hisat2 summary модулем MultiQC; **fail-fast валидация входов
+(v1.6)**: обязательные параметры по режиму, колонки/дубли/пустые
+ячейки samplesheet и dbsheet — 11 негативных кейсов падают до старта
+задач с понятным сообщением; эквивалентность относительных, абсолютных
+и `file://`-путей в samplesheet (байт-в-байт одинаковые выходы обоих
+режимов); гигиена glob'а индекса `<prefix>.*.ht2` (посторонние файлы
+не стейджатся); **сквозной smoke-harness одной командой (v1.7)**:
+pytest + четыре end-to-end прогона (с v1.9) + автоматическая сверка вердиктов,
+сравнений dehost:host и обязательных артефактов (test/run_smoke.sh +
+test/check_smoke.py), самодостаточный профиль test (прогоны bam/fastq
+без единого параметра), негативные сценарии сверки падают с exit 1;
+**окружение и ретрай памяти (NIPT-7, v1.8)**: точные пины всех
+инструментов в environment.yml, per-process директивы conda/container
+во всех 10 модулях, слияние профилей (`nextflow config -profile
+test[,docker,conda]`), ретрай kraken-задачи при искусственном exit 137
+с удвоением памяти (trace: попытка 1 FAILED/2 GB → попытка 2
+COMPLETED/4 GB, вердикты не изменились), `process.resourceLimits` и
+`manifest.nextflowVersion` парсятся и применяются; **per-process
+conda-окружения (`-profile test,conda`)**: все 6 уникальных директив
+резолвятся и собираются, end-to-end прогон fastq-режима успешен.
+Юнит-тестами дополнительно покрыты: FAIL/PIPELINE_ERROR при отсутствии
+профиля / compare JSON / битом fastp, логика панели
+(хит/мимо/нет панели), PASS_NEGATIVE при not_evaluated, регрессия бага
+«равные абсолютные прочтения → enriched», метрики сходства профилей,
+все инварианты контракта profile v2 (колонки, x_*, счётчики, статус
+empty, сумма reads), конвертер адаптера kraken2_bracken (включая пустой
+профиль и report без строки U), синтез фракции all, партиция
+dehost_split.sh (категории по флагам, исключение secondary/
+supplementary, пустые категории, SE-вход), суммирование счётчиков
+sum_counts.py, критерий консистентности с half (pass и
+SPLIT_INCONSISTENT). В v1.9 дополнительно проверены настоящий MetaX
+на toy-индексах, обе реальные fixtures, контракт/NA/empty/counts,
+fixture-driven stub, запрет fractional-индекса и уникализация SE.
+Итого **60/60** зелёных.
 
 **Не проверено (и не могло быть на toy):** реальные пороги QC (дефолты
 калибровочные, требуют реальных когорт НИПТ); производительность и RAM
 на Standard-БД Kraken2; поведение на реальных контаминациях; клиническая
 чувствительность/специфичность эвристики обогащения. FAIL-ветка
-(LOW_INPUT) покрыта юнит-логикой qc_gate.py, но не отдельным toy-образцом.
+LOW_INPUT (мало прочтений на входе) покрыта юнит-логикой qc_gate.py,
+но не отдельным toy-образцом. URI-пути в samplesheet/dbsheet (v1.6)
+проверены только на `file://`: ветка `s3://`/`https://` — тот же
+кодовый путь (regex → `file()` без склейки с каталогом CSV), но живой
+стейджинг из S3/HTTP зависит от настроенных плагинов Nextflow и здесь
+не прогонялся. Docker-рантайм (v1.7/v1.8): Dockerfile, .dockerignore, docker-профиль
+и per-process директивы `container` реализованы, автовыбор рантайма в
+run_smoke.sh проверен по локальной ветке, но в среде разработки docker
+отсутствует — сборка образа `nipt_mngs_qc:1.10.0`, скачивание
+biocontainers-образов с quay.io и прогоны `-profile test,docker` здесь
+не исполнялись; критерий приёмки 2 (smoke с `-profile test,docker` на
+чистой машине) требует прогона на машине с docker. Теги
+biocontainers-образов сверены по API quay.io (существуют), но их
+запуск не проверялся.
+Новый MetaX-адаптер проверен локально на Linux x86-64; старые
+индексы 0.9 не поддержаны, production-БД и pathogen-host таблицы не
+проверялись. Для MetaX classified_frac post-filter может отличаться
+от Kraken2: перенос порогов без калибровки не валидирован.
+QC JSON не менялся: верхнеуровневый `annotator` — строка одного
+первого профиля, а не реестр всех инструментов mixed-прогона;
+точные версии по ролям — в profile.json.
 
 ---
+
+## Часть 7. Samovar 99,5% HOST: настоящий PE126 и SE50 (v1.10.0)
+
+### 7.1 Смысл теста и воспроизводимость
+
+Цель — не получить зелёный отчёт любой ценой, а проверить полный путь
+`mode=fastq` при известном GT. В работе Kowarsky et al. около 0.45%
+QC-passing cfDNA reads не выравнивались на GRCh38, а примерно 1%
+этих putatively nonhuman reads распознавался в использованной базе
+известных микробов [1]. Это не означает, что все unmapped доказанно
+микробные. В нашем software-тесте все 0.5% намеренно отданы трём
+известным организмам для достаточного сигнала.
+
+Настоящий CTLab/samovar [2], commit
+`d6bb8246f9e31c7890f4393aa92bc7e0aa53d593`, ISS 2.0.1/hiseq,
+seed=42, один поток генерации, один sample, 600000 пар:
+597000 human + по 1000 пар phiX174/yeast/E. coli.
+Локально использован его укороченный human FASTA; новый HISAT2-индекс
+строится ровно из него. Полный GRCh38 не запускался.
+Повторный pilot дал идентичные FASTQ.
+
+Запуск организован в `tests/insilico/toy/` (отдельно от старого `test/`):
+preflight → Samovar generate/prepare/exec → проверенный парный
+seqkit shuffle → настоящий SE R1[:50] → full/panel Kraken2 →
+Bracken126/50 → PE/SE workflow → GT acceptance.
+Файл `README.md` в этом каталоге содержит точные серверные команды
+для соседних репозиториев; Samovar работает в отдельном Python 3.11.
+
+Видовой профиль не обязан содержать исходный taxid phiX174 2886930:
+его реальный ранг no rank [3], species-предок — 10847 [4].
+Сопоставление задано явно, исходные GT IDs сохранены.
+
+### 7.2 Изменения API и единицы
+
+В FASTQ samplesheet появился необязательный `single_end`.
+Пустой/false сохраняет PE, true требует пустого fastq_2.
+FASTP и DEHOST получают meta `[id,single_end]` + коллекцию входных
+FASTQ, FASTP выдаёт коллекцию из одного или двух trimmed FASTQ.
+DEHOST использует `-U` или `-1/-2`, но прежние bams tuples и ANNOTATE
+не меняются. В смешанном samplesheet маршрутизация проверена реальным
+Nextflow-прогоном. Для SE half пустой, но валидный BAM.
+
+`primary_reads` и FASTP total_reads — отдельные read records;
+Bracken/Kraken paired input — пары. QC `fragments` = пары PE / reads SE.
+Legacy-ключи QC `input_pairs`/`nonhost_pairs` сохранены.
+Приёмка HOST=H/(H+D+half); действующая QC HOST=H/(H+D).
+Публикация GT-аудитных trimmed FASTQ и BAM включается только
+`publish_validation_artifacts=true`; production default=false.
+
+### 7.3 Результат: выявлена human-утечка, а не достигнут PASS
+
+| Показатель | PE126 | SE50 |
+|---|---:|---:|
+| HOST, read records / полная партиция | 99.41113% | 99.40630% |
+| HOST / (H+D), текущий QC | 99.4882% | 99.4063% |
+| DEHOST primary records | 6008 | 3516 |
+| GT human в DEHOST | 40 мейтов | 516 reads |
+| GT microbes в DEHOST | 5968 мейтов | 3000 reads |
+| Bracken human | 20 пар | 224 reads |
+| Human fraction QC | 0.6658% | 6.3709% |
+| phiX / yeast / E. coli среди трёх видов | 33.3445/33.2775/33.3780% | 34.0292/32.0807/33.8900% |
+| QC verdict | PASS_POSITIVE | FALLBACK/DEHOST_FAILURE |
+
+Оба Nextflow workflow завершены без ошибок, оба MultiQC и dehost:host
+comparison сформированы, полная партиция IDs подтверждена.
+Однако строгая приёмка **FAIL: 31/34 checks PASS**.
+У обоих форматов human превышает min_reads=10 в full DEHOST; у SE
+дополнительно human leakage превышает неизменённые 5%.
+В microbial-only panel human физически отсутствует: чистый профиль
+panel не является доказательством чистоты DEHOST.
+
+Микробные доли укладываются в 26.67–40.00% каждая — это ±20%
+**относительно** 1/3, а не ±20 процентных пунктов. Нормировка только
+по трём видам не скрывает human: исходные reads/abundance и GT
+записаны в `acceptance.json`.
+
+Важный вывод: HOST в широком допуске 99.5±0.2% не гарантирует чистоты
+остатка. При низкой микробной биомассе даже малая доля пропущенного
+человеческого материала становится заметной долей DEHOST.
+Здесь GT подтверждает реальный human в остатке; механистическая
+причина неполного выравнивания отдельно не установлена.
+Настройки выравнивателя и пороги после этого результата не подгонялись.
+
+### 7.4 Проверки и границы
+
+Тестовый профиль меняет глубину/HOST минимум (100000/1000/0.993),
+не production defaults; Q30≥0.8, survival≥0.9 и human≤0.05 сохранены.
+Pipeline v1.10.0: 87/87 pytest и четыре прежних regression-прогона
+успешны. All-тест занял около 664 s, максимальный child RSS около
+1.15 GiB (не сумма одновременных процессов); файлы около 1.8 GB.
+Docker и полный человеческий reference не проверены.
+Closed toy не доказывает клиническую чувствительность/специфичность.
 
 ## Приложение A. Команды запуска
 
@@ -592,20 +1353,88 @@ dehost; контракт QC JSON; сборка MultiQC; коллизия имё�
 nextflow run main.nf --mode fastq \
     --input samplesheet_fastq.csv \
     --host_index /path/to/hisat2/human \
-    --db_full /path/to/kraken2_std --db_patho /path/to/eukpathdb \
+    --dbsheet dbsheet.csv \
     --outdir results -resume
 
 # Основной режим: от DEHOST/HOST BAM NIPD-системы
 nextflow run main.nf --mode bam \
     --input samplesheet_bam.csv \
-    --db_full /path/to/kraken2_std --db_patho /path/to/eukpathdb \
+    --dbsheet dbsheet.csv \
     --outdir results -resume
+
+# dbsheet.csv (с v1.4.0; заменяет --db_full/--db_patho):
+#   db_id,annotator,path,role
+#   kraken2_std,kraken2_bracken,/path/to/kraken2_std,full
+#   eukpathdb,kraken2_bracken,/path/to/eukpathdb,patho
+
+# Smoke-test одной командой: pytest + прогоны bam/fastq/stub/mixed +
+# сверка вердиктов, сравнений dehost:host и артефактов; при наличии
+# docker прогоны идут с -profile test,docker (с v1.8 — per-process
+# контейнеры: all-in-one образ собирается из Dockerfile, точные
+# biocontainers-образы скачиваются с quay.io)
+bash test/run_smoke.sh
+
+# Профили окружения (v1.8): per-process conda-окружения или контейнеры
+# (директивы conda/container в modules/local/*.nf)
+nextflow run main.nf ... -profile conda
+docker build -t nipt_mngs_qc:1.10.0 .   # разово: стандартный all-in-one образ
+nextflow run main.nf ... -profile docker
 
 # Smoke-test на toy-данных
 nextflow run main.nf --mode fastq --input test/toy/samplesheet_fastq.csv \
     --host_index $PWD/test/toy/host_index/human \
-    --db_full $PWD/test/toy/db_full --db_patho $PWD/test/toy/db_patho \
+    --dbsheet test/toy/dbsheet.csv \
+    --target_panel $PWD/test/toy/target_panel.txt \
     --outdir test/results_fastq -profile test
+
+# Smoke-test с fixture-driven stub (проверка расширяемости)
+nextflow run main.nf --mode bam --input test/toy/samplesheet_bam.csv \
+    --dbsheet test/toy/dbsheet_stub.csv \
+    --target_panel $PWD/test/toy/target_panel.txt \
+    --outdir test/results_stub -profile test
+
+# Kraken2(full) + stub(patho), без изменений main/compare/qc
+nextflow run main.nf -profile test --mode bam \
+    --dbsheet test/toy/dbsheet_mixed.csv --outdir test/results_mixed
+
+# Настоящий MetaX 2.0.3 (бинарник metax на PATH основного окружения;
+# либо -profile test,conda; DB/container-план в docs/profile_contract.md §8)
+nextflow run main.nf -profile test --mode bam \
+    --dbsheet test/toy/dbsheet_metax_real.csv --outdir test/results_metax_real
+
+# Дополнительная фракция all (dehost+host+half) — одним параметром,
+# без правок кода; работает в обоих режимах (v1.5)
+nextflow run main.nf --mode fastq --input test/toy/samplesheet_fastq.csv \
+    --host_index $PWD/test/toy/host_index/human \
+    --dbsheet test/toy/dbsheet.csv \
+    --target_panel $PWD/test/toy/target_panel.txt \
+    --fractions dehost,host,all \
+    --outdir test/results_fastq_all -profile test
+
+# Проверка fail-fast валидации (v1.6): каждый кейс падает с exit code 1
+# и понятным сообщением ДО старта задач (0 задач в логе)
+nextflow run main.nf --mode bam   # нет --input и нет -profile test -> error
+# (с v1.7 профиль test самодостаточен: `-profile test` без --input —
+# не ошибка, а штатный toy-прогон; fail-fast на отсутствие --input
+# срабатывает только вне профиля test)
+nextflow run main.nf --mode bam \
+    --input test/toy/invalid/samplesheet_bam_dup.csv \
+    --dbsheet test/toy/dbsheet.csv -profile test # дубль sample -> error
+
+# Эквивалентность относительных и абсолютных путей (v1.6): сгенерировать
+# abs-вариант samplesheet и сравнить выходы с базовым прогоном
+sed "s|,TOY|,$PWD/test/toy/TOY|g" test/toy/samplesheet_fastq.csv \
+    > /tmp/samplesheet_fastq_abs.csv
+nextflow run main.nf --mode fastq --input /tmp/samplesheet_fastq_abs.csv \
+    --host_index $PWD/test/toy/host_index/human \
+    --dbsheet test/toy/dbsheet.csv \
+    --target_panel $PWD/test/toy/target_panel.txt \
+    --outdir /tmp/results_fastq_abs -profile test
+# diff -rq test/results_fastq /tmp/results_fastq_abs \
+#     --exclude=multiqc --exclude=fastp   # пусто = идентично
+
+# Юнит-тесты (60: прежние 37 + stub/MetaX-конвертеры и подготовка MetaX)
+python3 -m pytest test/ -v
 ```
 
 ## Приложение B. Контракт QC JSON (`<sample>_qc_report.json`)
@@ -614,21 +1443,67 @@ nextflow run main.nf --mode fastq --input test/toy/samplesheet_fastq.csv \
 {
   "sample_id": "TOY_NORMAL",
   "pipeline": "nipt_mngs_qc",
-  "pipeline_version": "1.0.0",
+  "pipeline_version": "1.9.0",
   "status": "PASS_POSITIVE | PASS_NEGATIVE | FALLBACK | FAIL",
   "fallback_reasons": ["ZERO_MICROBIOME", "..."],
+  "positivity_source": "target_panel | not_evaluated",
+  "annotator": "kraken2_bracken 2.17.2+3.0.1",
+  "db_id": {"full": "db_full", "patho": "db_patho"},
+  "target_panel": {"file": "target_panel.txt", "n_targets": 1,
+                   "hits": ["Encephalitozoon cuniculi"],
+                   "positivity_source": "target_panel"},
   "criteria": [
     {"id": "input_pairs", "value": 94983.0, "threshold": ">= 10000",
      "pass": true, "severity_on_fail": "FAIL", "reason_code": null,
      "description": "..."}
   ],
-  "metrics": {"input_pairs": 94983.0, "host_fraction": 0.969, "...": "..."}
+  "metrics": {"input_pairs": 94983.0, "host_fraction": 0.969,
+              "half_mapped_reads": 0.0, "half_mapped_frac": 0.0,
+              "single_end": false, "...": "..."},
+  "comparison_info": {"full":  {"pair": "dehost:host", "n_shared": 0,
+                                "n_only_A": 3, "n_only_B": 1,
+                                "jaccard": 0.0,
+                                "bray_curtis_dissimilarity": 1.0,
+                                "spearman_rho": null,
+                                "n_enriched": 3, "enriched_taxa": ["..."]},
+                      "patho": {"n_enriched": 1, "...": "..."}}
 }
 ```
 
-`pass = null` — критерий не оценивался (режим bam, fastp upstream).
-`enrichment_fold = null` в diff JSON — бесконечное обогащение (таксона
-нет в host-фракции).
+`pass = null` — критерий не оценивался (режим bam; гейтинг утечки при
+нехватке не-хост прочтений; отсутствие входа для вычисления).
+`enrichment_fold = null` в compare JSON — бесконечное обогащение
+(таксона нет во второй фракции). `comparison_info` — информационная
+сводка comparison model v2 (метрики сходства профилей + enriched_taxa),
+на вердикт не влияет. `single_end` (v1.3) — AND по обеим фракциям;
+для SE-образцов «pairs»-метрики считаются в прочтениях (фрагментах).
+`annotator` (v1.4) — `"<annotator> <annotator_version>"` из контракта
+profile v2; `db_id` ключируется ролью БД из dbsheet (`full`/`patho`).
+`half_mapped_reads` / `half_mapped_frac` (v1.5) — прочтения в
+half-mapped парах (один мейт картирован, другой нет); в режиме bam
+равны 0 (партиция делегирована NIPD). Критерий консистентности сплита
+(v1.5): `|dehost + host + half − trimmed| / trimmed`.
+Контракт profile v2 (пары profile.tsv + sidecar profile.json, правила
+пустого профиля, реестр аннотаторов) — `docs/profile_contract.md`.
+
+Контракт counts JSON (`<sample>.<fraction>.counts.json`, v1.3; набор
+фракций расширен в v1.5) — per-fraction счётчики из
+`samtools view -c -F 0x900` (только primary, без
+secondary/supplementary); источник всех счётчиков QC gate в режиме
+bam (flagstat остаётся только для MultiQC). `fraction` ∈ {dehost, host}
+в режиме bam и {dehost, host, half} в режиме fastq; при включённой
+ветке all добавляется `all` (синтез sum_counts.py: суммы счётчиков,
+`single_end` — AND по составляющим, `fragments` пересчитывается):
+
+```json
+{"sample_id": "TOY_NORMAL", "fraction": "dehost",
+ "primary_reads": 5884, "paired_reads": 5884, "unpaired_reads": 0,
+ "single_end": false, "fragments": 2942}
+```
+
+`single_end = (paired_reads == 0)` — автоопределение per fraction;
+`fragments = paired_reads//2 + unpaired_reads` (для PE — пары, для SE —
+прочтения).
 
 ## Приложение C. Известные ограничения
 
@@ -637,8 +1512,58 @@ nextflow run main.nf --mode fastq --input test/toy/samplesheet_fastq.csv \
 2. Comparison model — детерминированная эвристика без статистической
    модели; при накоплении данных имеет смысл заменить на модель
    отрицательного контроля (например, по аналогии с decontam).
-3. Режим fastq картирует вход дважды (два прогона hocort) — принятый
-   компромисс ради единообразия интерфейса; в проде используется bam.
+3. ~~Режим fastq картирует вход дважды (два прогона hocort)~~ —
+   снято в v1.5: hocort удалён, DEHOST выполняет один прогон HISAT2
+   (`--no-spliced-alignment`) с разводкой по флагам SAM на
+   dehost/host/half.
 4. Kraken2+Bracken чувствительны к полноте БД: таксон вне БД либо
    unclassified, либо миссклассифицирован в ближайшего родственника —
    ещё один аргумент за host-фракцию как контроль.
+5. В режиме bam singleton-прочтения PE-режима (мейт потерян на этапе
+   секвенирования/дехостинга) пишутся в `<fraction>_se.fasta` и
+   учитываются в счётчиках counts JSON, но в аннотацию **не идут**
+   (делегированное решение; для NIPD PE BAM их доля ≈ 0). Истинно
+   single-end BAM аннотируется полностью — `single_end` определяется
+   автоматически по флагам BAM per fraction.
+6. `samtools collate` перед извлечением FASTA перегруппировывает весь
+   BAM по именам прочтений: на больших host BAM (десятки Гб) это
+   заметное дополнительное время/память (прод-замечание; на
+   toy-масштабе не ощущается). Альтернатива — `samtools sort -n`, но
+   collate быстрее и не пишет промежуточный BAM на диск при `-u`.
+7. Семантика `dehost_human_frac` в v1.4 — видовая (строка taxid 9606 в
+   profile.tsv), а не кладная (clade-процент отчёта Kraken2, как в
+   v1.3): единичные human-прочтения ниже порога отчётности адаптера
+   дают 0.0 вместо ~0.0003. Для калиброванного порога 0.05 это
+   несущественно, но при сравнении метрик между версиями пайплайна
+   сдвиг нужно учитывать.
+8. Фракция half (v1.5) — QC-only категория: учитывается в счётчиках,
+   критерии консистентности и метриках half_mapped_*, но **не
+   аннотируется** (половинчато картированные пары не относятся
+   уверенно ни к хосту, ни к микробиому; их судьба — предмет
+   отдельной калибровки).
+9. Ветка all в режиме bam — это dehost + host из NIPD: корректность
+   «всего входа» зависит от полноты партиции на стороне NIPD (если
+   NIPD отбрасывает half-mapped или иные категории, all их не
+   восстановит). В режиме fastq all = dehost + host + half и потому
+   тождествен trimmed-входу.
+10. Ограничение PE-only снято в v1.10.0: FASTQ принимает настоящий
+    SE с single_end=true и пустым fastq_2; mixed PE/SE проверен.
+    При этом короткие SE не гарантируют чистый DEHOST: Samovar SE50
+    выявил FALLBACK/DEHOST_FAILURE (часть 7).
+
+## References
+
+[1] Kowarsky M. et al. Numerous uncharacterized and highly divergent microbes
+which colonize humans are revealed by circulating cell-free DNA.
+PNAS. 2017;114(36):9623–9628. DOI: 10.1073/pnas.1707009114.
+https://ncbi.nlm.nih.gov/pmc/articles/PMC5594678/
+
+[2] CTLab/samovar. Source at commit
+d6bb8246f9e31c7890f4393aa92bc7e0aa53d593.
+https://github.com/CTLab/samovar/tree/d6bb8246f9e31c7890f4393aa92bc7e0aa53d593
+
+[3] ENA Taxonomy. Escherichia phage phiX174, taxid 2886930.
+https://www.ebi.ac.uk/ena/taxonomy/rest/tax-id/2886930
+
+[4] NCBI Taxonomy. Sinsheimervirus phiX174, taxid 10847.
+https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=10847

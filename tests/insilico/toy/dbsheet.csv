@@ -1,0 +1,3 @@
+db_id,annotator,path,role
+samovar_full,kraken2_bracken,../../../insilico_runs/toy_995/db_full,full
+samovar_patho,kraken2_bracken,../../../insilico_runs/toy_995/db_patho,patho

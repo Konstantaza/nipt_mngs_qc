@@ -2,14 +2,16 @@ name: nipt_mngs_qc
 channels:
   - bioconda
   - conda-forge
+# NIPT-7 (v1.8.0): все инструменты закреплены точной версией (major.minor.patch).
+# Набор версий соответствует проверенному окружению разработки и образу
+# nipt_mngs_qc:1.10.0 (Dockerfile в корне). hocort не ставим (ушёл в NEW-2).
 dependencies:
   - fastp=1.3.7
   - kraken2=2.17.2
-  - bracken
-  - samtools
+  - bracken=3.1
+  - samtools=1.24
   - hisat2=2.2.3
   - multiqc=1.35
-  - python=3.11
-  - pip
-  - pip:
-      - git+https://github.com/ignasrum/hocort.git
+  - python=3.14.7
+  - pytest=9.1.1
+  - seqkit=2.9.0   # deterministic paired shuffle, tests/insilico/toy

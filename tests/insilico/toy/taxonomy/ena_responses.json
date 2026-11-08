@@ -1,0 +1,886 @@
+{
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/tax-id/2886930": {
+    "taxId": "2886930",
+    "scientificName": "Escherichia phage phiX174",
+    "formalName": "false",
+    "rank": "no rank",
+    "division": "PHG",
+    "lineage": "Viruses; Floreoviria; Sangervirae; Phixviricota; Microviricetes; Bullavirales; Eubullaviridae; Sinsheimervirus; Sinsheimervirus phiX174; ",
+    "geneticCode": "11",
+    "submittable": "true",
+    "binomial": "true",
+    "merged": "[374840]",
+    "otherNames": [
+      "Bacteriophage phi-X174:equivalent name",
+      "Coliphage phiX174:equivalent name",
+      "Enterobacteria phage phiX174:equivalent name",
+      "Enterobacteria phage phiX174 sensu lato:equivalent name",
+      "Enterobacteriaceae phage phi-X174:equivalent name",
+      "bacteriophage phiX174:equivalent name",
+      "phage phi-X174:equivalent name"
+    ],
+    "metagenome": "false"
+  },
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Viruses": [
+    {
+      "taxId": "10239",
+      "scientificName": "Viruses",
+      "formalName": "false",
+      "rank": "acellular root",
+      "division": "VRL",
+      "geneticCode": "1",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [
+        "Vira:synonym",
+        "Viridae:synonym"
+      ],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Floreoviria": [
+    {
+      "taxId": "2731342",
+      "scientificName": "Floreoviria",
+      "commonName": "single-stranded DNA viruses",
+      "formalName": "false",
+      "rank": "realm",
+      "division": "VRL",
+      "lineage": "Viruses; ",
+      "geneticCode": "1",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [
+        "Monodnaviria:equivalent name",
+        "single-stranded DNA viruses:genbank common name"
+      ],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Sangervirae": [
+    {
+      "taxId": "2732091",
+      "scientificName": "Sangervirae",
+      "formalName": "false",
+      "rank": "kingdom",
+      "division": "VRL",
+      "lineage": "Viruses; Floreoviria; ",
+      "geneticCode": "1",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Phixviricota": [
+    {
+      "taxId": "2732412",
+      "scientificName": "Phixviricota",
+      "formalName": "false",
+      "rank": "phylum",
+      "division": "VRL",
+      "lineage": "Viruses; Floreoviria; Sangervirae; ",
+      "geneticCode": "11",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Microviricetes": [
+    {
+      "taxId": "10841",
+      "scientificName": "Microviricetes",
+      "commonName": "isometric ssDNA phages",
+      "formalName": "false",
+      "rank": "class",
+      "division": "VRL",
+      "lineage": "Viruses; Floreoviria; Sangervirae; Phixviricota; ",
+      "geneticCode": "11",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [
+        "Microviridae:equivalent name",
+        "isometric ssDNA phages:genbank common name"
+      ],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Bullavirales": [
+    {
+      "taxId": "1910950",
+      "scientificName": "Bullavirales",
+      "formalName": "false",
+      "rank": "order",
+      "division": "VRL",
+      "lineage": "Viruses; Floreoviria; Sangervirae; Phixviricota; Microviricetes; ",
+      "geneticCode": "11",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [
+        "Bullavirinae:equivalent name"
+      ],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Eubullaviridae": [
+    {
+      "taxId": "3701015",
+      "scientificName": "Eubullaviridae",
+      "formalName": "false",
+      "rank": "family",
+      "division": "VRL",
+      "lineage": "Viruses; Floreoviria; Sangervirae; Phixviricota; Microviricetes; Bullavirales; ",
+      "geneticCode": "11",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Sinsheimervirus": [
+    {
+      "taxId": "1910954",
+      "scientificName": "Sinsheimervirus",
+      "formalName": "false",
+      "rank": "genus",
+      "division": "VRL",
+      "lineage": "Viruses; Floreoviria; Sangervirae; Phixviricota; Microviricetes; Bullavirales; Eubullaviridae; ",
+      "geneticCode": "11",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [
+        "Phix174microvirus:equivalent name"
+      ],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Sinsheimervirus%20phiX174": [
+    {
+      "taxId": "10847",
+      "scientificName": "Sinsheimervirus phiX174",
+      "formalName": "true",
+      "rank": "species",
+      "division": "VRL",
+      "lineage": "Viruses; Floreoviria; Sangervirae; Phixviricota; Microviricetes; Bullavirales; Eubullaviridae; Sinsheimervirus; ",
+      "geneticCode": "11",
+      "submittable": "true",
+      "binomial": "true",
+      "otherNames": [
+        "Escherichia virus phiX174:equivalent name"
+      ],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/tax-id/10847": {
+    "taxId": "10847",
+    "scientificName": "Sinsheimervirus phiX174",
+    "formalName": "true",
+    "rank": "species",
+    "division": "VRL",
+    "lineage": "Viruses; Floreoviria; Sangervirae; Phixviricota; Microviricetes; Bullavirales; Eubullaviridae; Sinsheimervirus; ",
+    "geneticCode": "11",
+    "submittable": "true",
+    "binomial": "true",
+    "otherNames": [
+      "Escherichia virus phiX174:equivalent name"
+    ],
+    "metagenome": "false"
+  },
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/tax-id/4932": {
+    "taxId": "4932",
+    "scientificName": "Saccharomyces cerevisiae",
+    "commonName": "brewer's yeast",
+    "formalName": "true",
+    "rank": "species",
+    "division": "FUN",
+    "lineage": "Eukaryota; Fungi; Dikarya; Ascomycota; Saccharomycotina; Saccharomycetes; Saccharomycetales; Saccharomycetaceae; Saccharomyces; ",
+    "geneticCode": "1",
+    "mitochondrialGeneticCode": "3",
+    "submittable": "true",
+    "binomial": "true",
+    "merged": "[41870, 2898199, 252598]",
+    "authority": "(Desm.) Meyen, 1838",
+    "otherNames": [
+      "Saccharomyces cerevisiae 'var. diastaticus':equivalent name",
+      "Saccharomyces boulardii:equivalent name",
+      "Saccharomyces boulardii Seguela, Bastide & Massot, 1984:authority",
+      "Saccharomyces diastaticus J. Andrews & R.B. Gilliland ex Van der Walt, 1965:authority",
+      "Mycoderma cerevisiae Desm., 1827:authority",
+      "Saccharomyces sp. Af145-1-1:includes",
+      "Saccharomyces uvarum var. melibiosus:synonym",
+      "Saccharomyces oviformis:synonym",
+      "Mycoderma cerevisiae:synonym",
+      "Candida robusta:synonym",
+      "Saccharomyces cerevisiae (Desm.) Meyen ex E.C. Hansen, 1883:synonym",
+      "Saccharomyces boulardii (nom. inval.):synonym",
+      "Saccharomyces italicus:synonym",
+      "Saccharomyces capensis:synonym",
+      "Saccharomyces diastaticus:synonym",
+      "brewer's yeast:genbank common name"
+    ],
+    "metagenome": "false"
+  },
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Eukaryota": [
+    {
+      "taxId": "2759",
+      "scientificName": "Eukaryota",
+      "commonName": "eukaryotes",
+      "formalName": "false",
+      "rank": "domain",
+      "division": "INV",
+      "geneticCode": "1",
+      "mitochondrialGeneticCode": "1",
+      "plastIdGeneticCode": "11",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [
+        "Eukarya:synonym",
+        "Eukaryotae:synonym",
+        "Eucaryotae:synonym",
+        "Eucarya:synonym",
+        "eukaryotes:genbank common name",
+        "eukaryotes <genbank common name>:genbank common name"
+      ],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Fungi": [
+    {
+      "taxId": "4751",
+      "scientificName": "Fungi",
+      "commonName": "fungi",
+      "formalName": "false",
+      "rank": "kingdom",
+      "division": "FUN",
+      "lineage": "Eukaryota; ",
+      "geneticCode": "1",
+      "mitochondrialGeneticCode": "4",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [
+        "Mycota:synonym"
+      ],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Dikarya": [
+    {
+      "taxId": "451864",
+      "scientificName": "Dikarya",
+      "formalName": "false",
+      "rank": "subkingdom",
+      "division": "FUN",
+      "lineage": "Eukaryota; Fungi; ",
+      "geneticCode": "1",
+      "mitochondrialGeneticCode": "4",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Ascomycota": [
+    {
+      "taxId": "4890",
+      "scientificName": "Ascomycota",
+      "commonName": "ascomycete fungi",
+      "formalName": "false",
+      "rank": "phylum",
+      "division": "FUN",
+      "lineage": "Eukaryota; Fungi; Dikarya; ",
+      "geneticCode": "1",
+      "mitochondrialGeneticCode": "4",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [
+        "ascomycete fungi:genbank common name",
+        "ascomycete fungi <genbank common name>:genbank common name"
+      ],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Saccharomycotina": [
+    {
+      "taxId": "147537",
+      "scientificName": "Saccharomycotina",
+      "commonName": "true yeasts",
+      "formalName": "false",
+      "rank": "subphylum",
+      "division": "FUN",
+      "lineage": "Eukaryota; Fungi; Dikarya; Ascomycota; ",
+      "geneticCode": "1",
+      "mitochondrialGeneticCode": "4",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [
+        "budding yeasts & allies:genbank common name",
+        "budding yeasts & allies <genbank common name>:genbank common name"
+      ],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Saccharomycetes": [
+    {
+      "taxId": "4891",
+      "scientificName": "Saccharomycetes",
+      "formalName": "false",
+      "rank": "class",
+      "division": "FUN",
+      "lineage": "Eukaryota; Fungi; Dikarya; Ascomycota; Saccharomycotina; ",
+      "geneticCode": "1",
+      "mitochondrialGeneticCode": "3",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [
+        "Saccharomycetes G. Winter, 1880:authority",
+        "Hemiascomycetes:synonym"
+      ],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Saccharomycetales": [
+    {
+      "taxId": "4892",
+      "scientificName": "Saccharomycetales",
+      "commonName": "budding yeasts",
+      "formalName": "false",
+      "rank": "order",
+      "division": "FUN",
+      "lineage": "Eukaryota; Fungi; Dikarya; Ascomycota; Saccharomycotina; Saccharomycetes; ",
+      "geneticCode": "1",
+      "mitochondrialGeneticCode": "3",
+      "submittable": "false",
+      "binomial": "false",
+      "authority": "Luerss., 1879",
+      "otherNames": [
+        "Saccharomycetales Luerss., 1879:authority",
+        "Endomycetales:synonym"
+      ],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Saccharomycetaceae": [
+    {
+      "taxId": "4893",
+      "scientificName": "Saccharomycetaceae",
+      "formalName": "false",
+      "rank": "family",
+      "division": "FUN",
+      "lineage": "Eukaryota; Fungi; Dikarya; Ascomycota; Saccharomycotina; Saccharomycetes; Saccharomycetales; ",
+      "geneticCode": "1",
+      "mitochondrialGeneticCode": "3",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [
+        "Saccharomycetaceae Luerss., 1879:authority",
+        "Eremotheciaceae:includes"
+      ],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Saccharomyces": [
+    {
+      "taxId": "4930",
+      "scientificName": "Saccharomyces",
+      "formalName": "false",
+      "rank": "genus",
+      "division": "FUN",
+      "lineage": "Eukaryota; Fungi; Dikarya; Ascomycota; Saccharomycotina; Saccharomycetes; Saccharomycetales; Saccharomycetaceae; ",
+      "geneticCode": "1",
+      "mitochondrialGeneticCode": "3",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [
+        "Pachytichospora:synonym"
+      ],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/tax-id/562": {
+    "taxId": "562",
+    "scientificName": "Escherichia coli",
+    "commonName": "E. coli",
+    "formalName": "true",
+    "rank": "species",
+    "division": "PRO",
+    "lineage": "Bacteria; Pseudomonadati; Pseudomonadota; Gammaproteobacteria; Enterobacterales; Enterobacteriaceae; Escherichia; ",
+    "geneticCode": "11",
+    "submittable": "true",
+    "binomial": "true",
+    "merged": "[1806490, 662104, 662101, 1637691, 469598]",
+    "authority": "(Migula 1895) Castellani and Chalmers 1919 (Approved Lists 1980)",
+    "otherNames": [
+      "Escherichia/Shigella coli:equivalent name",
+      "\"Bacterium coli\" (Migula 1895) Lehmann and Neumann 1896:authority",
+      "\"Bacillus coli\" Migula 1895:authority",
+      "\"Bacterium coli commune\" Escherich 1885:authority",
+      "Escherichia coli (Migula 1895) Castellani and Chalmers 1919 (Approved Lists 1980):authority",
+      "bacterium E3:includes",
+      "bacterium 10a:includes",
+      "Achromobacter sp. ATCC 35328:includes",
+      "Escherichia sp. 3_2_53FAA:includes",
+      "Escherichia sp. MAR:includes",
+      "Bacterium coli commune:synonym",
+      "Bacterium coli:synonym",
+      "Enterococcus coli:synonym",
+      "Bacillus coli:synonym"
+    ],
+    "metagenome": "false"
+  },
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Bacteria": [
+    {
+      "taxId": "2",
+      "scientificName": "Bacteria",
+      "commonName": "bacteria",
+      "formalName": "false",
+      "rank": "domain",
+      "division": "PRO",
+      "geneticCode": "11",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [
+        "\"Bacteriobiota\" Luketa 2012:authority",
+        "\"Bacteria\" Cavalier-Smith 1987:authority",
+        "Bacteriobiota:synonym",
+        "Bacteria (ex Cavalier-Smith 1987):synonym",
+        "Bacteria Woese et al. 2024:synonym",
+        "bacteria:genbank common name",
+        "bacteria <genbank common name>:genbank common name"
+      ],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Pseudomonadati": [
+    {
+      "taxId": "3379134",
+      "scientificName": "Pseudomonadati",
+      "formalName": "false",
+      "rank": "kingdom",
+      "division": "PRO",
+      "lineage": "Bacteria; ",
+      "geneticCode": "11",
+      "submittable": "false",
+      "binomial": "false",
+      "authority": "(Gibbons and Murray 1978) Oren and Göker 2024",
+      "otherNames": [
+        "Pseudomonadati (Gibbons and Murray 1978) Oren and Goker 2024:authority"
+      ],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Pseudomonadota": [
+    {
+      "taxId": "1224",
+      "scientificName": "Pseudomonadota",
+      "commonName": "purple photosynthetic bacteria and relatives",
+      "formalName": "false",
+      "rank": "phylum",
+      "division": "PRO",
+      "lineage": "Bacteria; Pseudomonadati; ",
+      "geneticCode": "11",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [
+        "\"Proteobacteria\" Garrity et al. 2005:authority",
+        "\"Proteobacteriota\" Panda et al. 2022:authority",
+        "Proteobacteria Stackebrandt et al. 1988:authority",
+        "Pseudomonadota corrig. Garrity et al. 2021:authority",
+        "Proteobacteriota:synonym",
+        "Alphaproteobacteriota:synonym",
+        "\"Alphaproteobacteriota\" Whitman et al. 2018:synonym",
+        "Proteobacteria:synonym",
+        "proteobacteria:genbank common name",
+        "proteobacteria <genbank common name>:genbank common name"
+      ],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Gammaproteobacteria": [
+    {
+      "taxId": "1236",
+      "scientificName": "Gammaproteobacteria",
+      "formalName": "false",
+      "rank": "class",
+      "division": "PRO",
+      "lineage": "Bacteria; Pseudomonadati; Pseudomonadota; ",
+      "geneticCode": "11",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [
+        "\"Pseudomonadia\" Oren et al. 2016:authority",
+        "Gammaproteobacteria Garrity et al. 2005 emend. Williams and Kelly 2013:authority",
+        "Pseudomonadia:synonym",
+        "gamma subdivision:synonym",
+        "gamma subgroup:synonym",
+        "Proteobacteria gamma subdivision:synonym",
+        "Purple bacteria, gamma subdivision:synonym",
+        "gamma proteobacteria:synonym",
+        "g-proteobacteria:genbank common name",
+        "g-proteobacteria <genbank common name>:genbank common name"
+      ],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Enterobacterales": [
+    {
+      "taxId": "91347",
+      "scientificName": "Enterobacterales",
+      "formalName": "false",
+      "rank": "order",
+      "division": "PRO",
+      "lineage": "Bacteria; Pseudomonadati; Pseudomonadota; Gammaproteobacteria; ",
+      "geneticCode": "11",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [
+        "Enterobacterales Adeolu et al. 2016:authority",
+        "Enterobacteriales:synonym",
+        "Enterobacteriaceae and related endosymbionts:synonym",
+        "Enterobacteriaceae group:synonym"
+      ],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Enterobacteriaceae": [
+    {
+      "taxId": "543",
+      "scientificName": "Enterobacteriaceae",
+      "formalName": "false",
+      "rank": "family",
+      "division": "PRO",
+      "lineage": "Bacteria; Pseudomonadati; Pseudomonadota; Gammaproteobacteria; Enterobacterales; ",
+      "geneticCode": "11",
+      "submittable": "false",
+      "binomial": "false",
+      "authority": "Rahn 1937 (Approved Lists 1980) emend. Adeolu et al. 2016",
+      "otherNames": [
+        "Enterobacteraceae (ex Lapage 1979) Lapage 1982:authority",
+        "Enterobacteriaceae Rahn 1937 (Approved Lists 1980) emend. Adeolu et al. 2016:authority",
+        "Enterobacteriaceae (ex Rahn 1937) Ewing et al. 1980:authority",
+        "Enterobacteraceae:synonym",
+        "enterobacteria:genbank common name",
+        "enterobacteria <genbank common name>:genbank common name"
+      ],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Escherichia": [
+    {
+      "taxId": "561",
+      "scientificName": "Escherichia",
+      "formalName": "false",
+      "rank": "genus",
+      "division": "PRO",
+      "lineage": "Bacteria; Pseudomonadati; Pseudomonadota; Gammaproteobacteria; Enterobacterales; Enterobacteriaceae; ",
+      "geneticCode": "11",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [
+        "Escherichia Castellani and Chalmers 1919:authority"
+      ],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/tax-id/9606": {
+    "taxId": "9606",
+    "scientificName": "Homo sapiens",
+    "commonName": "human",
+    "formalName": "true",
+    "rank": "species",
+    "division": "HUM",
+    "lineage": "Eukaryota; Metazoa; Chordata; Craniata; Vertebrata; Euteleostomi; Mammalia; Eutheria; Euarchontoglires; Primates; Haplorrhini; Catarrhini; Hominidae; Homo; ",
+    "geneticCode": "1",
+    "mitochondrialGeneticCode": "2",
+    "submittable": "true",
+    "binomial": "true",
+    "otherNames": [
+      "Homo sapiens Linnaeus, 1758:authority",
+      "human:genbank common name"
+    ],
+    "metagenome": "false"
+  },
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Metazoa": [
+    {
+      "taxId": "33208",
+      "scientificName": "Metazoa",
+      "commonName": "animals",
+      "formalName": "false",
+      "rank": "kingdom",
+      "division": "INV",
+      "lineage": "Eukaryota; ",
+      "geneticCode": "1",
+      "mitochondrialGeneticCode": "1",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [
+        "Animalia:synonym",
+        "animals:genbank common name",
+        "animals <genbank common name>:genbank common name"
+      ],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Chordata": [
+    {
+      "taxId": "7711",
+      "scientificName": "Chordata",
+      "commonName": "chordates",
+      "formalName": "false",
+      "rank": "phylum",
+      "division": "INV",
+      "lineage": "Eukaryota; Metazoa; ",
+      "geneticCode": "1",
+      "mitochondrialGeneticCode": "5",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [
+        "chordates:genbank common name",
+        "chordates <genbank common name>:genbank common name"
+      ],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Craniata": [
+    {
+      "taxId": "89593",
+      "scientificName": "Craniata",
+      "formalName": "false",
+      "rank": "subphylum",
+      "division": "INV",
+      "lineage": "Eukaryota; Metazoa; Chordata; ",
+      "geneticCode": "1",
+      "mitochondrialGeneticCode": "2",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [],
+      "metagenome": "false"
+    },
+    {
+      "taxId": "115366",
+      "scientificName": "Craniata",
+      "formalName": "false",
+      "rank": "class",
+      "division": "INV",
+      "lineage": "Eukaryota; Metazoa; Spiralia; Lophotrochozoa; Brachiopoda; Craniiformea; ",
+      "geneticCode": "1",
+      "mitochondrialGeneticCode": "5",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Vertebrata": [
+    {
+      "taxId": "7742",
+      "scientificName": "Vertebrata",
+      "commonName": "vertebrates",
+      "formalName": "false",
+      "rank": "clade",
+      "division": "VRT",
+      "lineage": "Eukaryota; Metazoa; Chordata; Craniata; ",
+      "geneticCode": "1",
+      "mitochondrialGeneticCode": "2",
+      "submittable": "false",
+      "binomial": "false",
+      "authority": "Cuvier, 1812",
+      "otherNames": [
+        "Vertebrata Cuvier, 1812:authority",
+        "vertebrates:genbank common name",
+        "vertebrates <genbank common name>:genbank common name"
+      ],
+      "metagenome": "false"
+    },
+    {
+      "taxId": "1261581",
+      "scientificName": "Vertebrata",
+      "formalName": "false",
+      "rank": "genus",
+      "division": "PLN",
+      "lineage": "Eukaryota; Rhodophyta; Florideophyceae; Rhodymeniophycidae; Ceramiales; Rhodomelaceae; Polysiphonioideae; ",
+      "geneticCode": "1",
+      "mitochondrialGeneticCode": "4",
+      "plastIdGeneticCode": "11",
+      "submittable": "false",
+      "binomial": "false",
+      "authority": "S.F.Gray, 1821",
+      "otherNames": [
+        "Ctenosiphonia Falkenberg:authority",
+        "Vertebrata S.F.Gray, 1821:authority",
+        "Ctenosiphonia:synonym"
+      ],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Euteleostomi": [
+    {
+      "taxId": "117571",
+      "scientificName": "Euteleostomi",
+      "commonName": "bony vertebrates",
+      "formalName": "false",
+      "rank": "clade",
+      "division": "VRT",
+      "lineage": "Eukaryota; Metazoa; Chordata; Craniata; Vertebrata; ",
+      "geneticCode": "1",
+      "mitochondrialGeneticCode": "2",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [
+        "bony vertebrates:genbank common name"
+      ],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Mammalia": [
+    {
+      "taxId": "40674",
+      "scientificName": "Mammalia",
+      "commonName": "mammals",
+      "formalName": "false",
+      "rank": "class",
+      "division": "MAM",
+      "lineage": "Eukaryota; Metazoa; Chordata; Craniata; Vertebrata; Euteleostomi; ",
+      "geneticCode": "1",
+      "mitochondrialGeneticCode": "2",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [
+        "mammals:genbank common name",
+        "mammals <genbank common name>:genbank common name"
+      ],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Eutheria": [
+    {
+      "taxId": "9347",
+      "scientificName": "Eutheria",
+      "commonName": "placentals",
+      "formalName": "false",
+      "rank": "clade",
+      "division": "MAM",
+      "lineage": "Eukaryota; Metazoa; Chordata; Craniata; Vertebrata; Euteleostomi; Mammalia; ",
+      "geneticCode": "1",
+      "mitochondrialGeneticCode": "2",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [
+        "Placentalia:synonym",
+        "placentals:genbank common name",
+        "placentals <genbank common name>:genbank common name"
+      ],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Euarchontoglires": [
+    {
+      "taxId": "314146",
+      "scientificName": "Euarchontoglires",
+      "formalName": "false",
+      "rank": "superorder",
+      "division": "MAM",
+      "lineage": "Eukaryota; Metazoa; Chordata; Craniata; Vertebrata; Euteleostomi; Mammalia; Eutheria; ",
+      "geneticCode": "1",
+      "mitochondrialGeneticCode": "2",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Primates": [
+    {
+      "taxId": "9443",
+      "scientificName": "Primates",
+      "formalName": "false",
+      "rank": "order",
+      "division": "MAM",
+      "lineage": "Eukaryota; Metazoa; Chordata; Craniata; Vertebrata; Euteleostomi; Mammalia; Eutheria; Euarchontoglires; ",
+      "geneticCode": "1",
+      "mitochondrialGeneticCode": "2",
+      "submittable": "false",
+      "binomial": "false",
+      "authority": "Linnaeus, 1758",
+      "otherNames": [
+        "primate:equivalent name",
+        "Primates Linnaeus, 1758:authority",
+        "Primata:synonym",
+        "primates:genbank common name",
+        "primates <genbank common name>:genbank common name"
+      ],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Haplorrhini": [
+    {
+      "taxId": "376913",
+      "scientificName": "Haplorrhini",
+      "formalName": "false",
+      "rank": "suborder",
+      "division": "MAM",
+      "lineage": "Eukaryota; Metazoa; Chordata; Craniata; Vertebrata; Euteleostomi; Mammalia; Eutheria; Euarchontoglires; Primates; ",
+      "geneticCode": "1",
+      "mitochondrialGeneticCode": "2",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Catarrhini": [
+    {
+      "taxId": "9526",
+      "scientificName": "Catarrhini",
+      "formalName": "false",
+      "rank": "parvorder",
+      "division": "MAM",
+      "lineage": "Eukaryota; Metazoa; Chordata; Craniata; Vertebrata; Euteleostomi; Mammalia; Eutheria; Euarchontoglires; Primates; Haplorrhini; ",
+      "geneticCode": "1",
+      "mitochondrialGeneticCode": "2",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Hominidae": [
+    {
+      "taxId": "9604",
+      "scientificName": "Hominidae",
+      "formalName": "false",
+      "rank": "family",
+      "division": "MAM",
+      "lineage": "Eukaryota; Metazoa; Chordata; Craniata; Vertebrata; Euteleostomi; Mammalia; Eutheria; Euarchontoglires; Primates; Haplorrhini; Catarrhini; ",
+      "geneticCode": "1",
+      "mitochondrialGeneticCode": "2",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [
+        "Hominidae Gray, 1825:authority",
+        "Pongidae:synonym",
+        "great apes:genbank common name"
+      ],
+      "metagenome": "false"
+    }
+  ],
+  "https://www.ebi.ac.uk/ena/taxonomy/rest/scientific-name/Homo": [
+    {
+      "taxId": "9605",
+      "scientificName": "Homo",
+      "commonName": "humans",
+      "formalName": "false",
+      "rank": "genus",
+      "division": "MAM",
+      "lineage": "Eukaryota; Metazoa; Chordata; Craniata; Vertebrata; Euteleostomi; Mammalia; Eutheria; Euarchontoglires; Primates; Haplorrhini; Catarrhini; Hominidae; ",
+      "geneticCode": "1",
+      "mitochondrialGeneticCode": "2",
+      "submittable": "false",
+      "binomial": "false",
+      "otherNames": [
+        "Homo Linnaeus, 1758:authority"
+      ],
+      "metagenome": "false"
+    }
+  ]
+}

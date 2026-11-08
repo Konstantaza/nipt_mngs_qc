@@ -1,0 +1,9 @@
+# Контекст сборки образа: нужен только environment.yml
+.git
+work
+.nextflow
+.nextflow.log*
+test/results*
+test/toy
+**/__pycache__
+.pytest_cache

@@ -1,0 +1,3 @@
+db_id,annotator,path,role
+db_metax_full,metax,db_metax_full,full
+db_metax_patho,metax,db_metax_patho,patho

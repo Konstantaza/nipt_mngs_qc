@@ -1,0 +1,1 @@
+Encephalitozoon cuniculi	284813	species	520.00000	0.39508	100.00000	0.32715	0.32648	1.00000	0.99274	0.89162	0.90440	1.00000	unknown	unknown	unknown

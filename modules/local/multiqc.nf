@@ -1,33 +1,34 @@
 // =============================================================================
-// MULTIQC — агрегация всех QC-артефактов в единый HTML-отчёт
+// MULTIQC — агрегация QC-артефактов в единый HTML-отчёт
 //
-// MultiQC из коробки понимает fastp, samtools flagstat, kraken2, bracken;
-// вердикты QC gate подключаются как custom content (*_qc_mqc.tsv).
+// v1.1: работает ТОЛЬКО по застейдженным входам (custom content из контракта
+// QC gate, kraken reports, flagstat, fastp) — params.outdir не сканируется.
+// MultiQC из коробки понимает fastp, samtools flagstat, kraken2; вердикты
+// QC gate подключаются как custom content (*_qc_mqc.tsv).
 // =============================================================================
 process MULTIQC {
     label 'process_low'
 
+    // NIPT-7 (v1.8.0): точный пин; container — для -profile docker
+    conda 'bioconda::multiqc=1.35'
+    container 'quay.io/biocontainers/multiqc:1.35--pyhdfd78af_2'
+
     publishDir "${params.outdir}/multiqc", mode: 'copy'
 
     input:
-    path qc_files   // не читается напрямую: нужен только для порядка зависимостей
-                    // (MULTIQC ждёт завершения всех QC_GATE / PROFILE)
-    val outdir_abs  // params.outdir, заранее resolved в абсолютный путь
-                    // (относительный путь в work-директории задачи не существует)
+    path qc_files   // все QC-артефакты всех образцов (collect):
+                    // имена уникальны за счёт префикса sample_id
 
     output:
     path 'multiqc_report.html'
     path 'multiqc_report_data', emit: data   // MultiQC называет data-папку по имени отчёта
 
     script:
-    // Сканируем опубликованные результаты, а не стейджинг: так MultiQC видит
-    // fastp / flagstat / kraken / custom content всех образцов.
-    // Собственную выходную подпапку multiqc/ игнорируем (важно при -resume).
+    // Сканируем только свою work-директорию с застейдженными входами.
     """
-    multiqc ${outdir_abs} \
+    multiqc . \
         --config ${projectDir}/multiqc_config.yaml \
         --filename multiqc_report.html \
-        --ignore '*/multiqc/*' \
         --force
     """
 }

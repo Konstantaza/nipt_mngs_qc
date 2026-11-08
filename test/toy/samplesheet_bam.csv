@@ -1,3 +1,5 @@
 sample,dehost_bam,host_bam
 TOY_NORMAL,bams/TOY_NORMAL.dehost.bam,bams/TOY_NORMAL.host.bam
 TOY_LEAK,bams/TOY_NORMAL.host.bam,bams/TOY_NORMAL.host.bam
+TOY_SORTED,bams/TOY_SORTED.dehost.bam,bams/TOY_SORTED.host.bam
+TOY_SE,bams/TOY_SE.dehost.bam,bams/TOY_SE.host.bam

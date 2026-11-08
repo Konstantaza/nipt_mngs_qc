@@ -3,9 +3,17 @@ work/
 .nextflow/
 .nextflow.log*
 
-# Результаты прогонов
+# Результаты прогонов (регенерируются пайплайном)
 results/
 test/results_*/
+insilico_runs/
+
+# MetaX: runtime cache рядом с индексом, не часть исходной БД
+*.metamcache
+
+# Python
+__pycache__/
+.pytest_cache/
 
 # Системное
 .DS_Store
